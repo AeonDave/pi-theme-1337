@@ -1,0 +1,226 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { frameEditor, GUTTER, isRuleLine, lastRuleIndex, layoutRow, resolveSegment, ROUNDED, scrollMarker } from "../src/frame.ts";
+import { stripAnsi, visibleWidth } from "../src/width.ts";
+
+const id = (s: string) => s;
+
+test("isRuleLine recognizes Pi's horizontal rules, not content", () => {
+	assert.ok(isRuleLine("─".repeat(20)));
+	assert.ok(isRuleLine("─── ↑ 3 more ─────────"));
+	assert.ok(!isRuleLine("  hello world        "));
+	assert.ok(!isRuleLine("                    ")); // empty content line
+});
+
+test("lastRuleIndex finds the bottom rule, leaving autocomplete below it", () => {
+	const raw = ["─".repeat(10), " content  ", "─".repeat(10), "/init     ", "/clear    "];
+	assert.equal(lastRuleIndex(raw), 2);
+});
+
+test("isRuleLine recognizes the degraded '↓ N more' scroll indicator despite few dashes", () => {
+	assert.ok(isRuleLine("──── ↓ 12 more")); // < 40% dashes, but unmistakably a scroll rule
+	assert.ok(isRuleLine("─...")); // Pi truncates a scroll rule to this at editor width 4
+	assert.ok(isRuleLine("──...")); // and to this at editor width 5
+	assert.ok(!isRuleLine("──── 12 apples")); // real content with dashes is not a rule
+});
+
+test("layoutRow spans exactly width with left, center, and right segments", () => {
+	const line = layoutRow(" left ", " 12.3k · 6% ", " right ", 40);
+	assert.equal(visibleWidth(line), 40);
+	assert.ok(line.includes(" left ") && line.includes(" right ") && line.includes(" 12.3k · 6% "));
+	const before = line.indexOf("1") - line.indexOf("left"); // fill exists on the left of center
+	assert.ok(before > 2);
+});
+
+test("layoutRow drops the center segment when there's no room", () => {
+	const line = layoutRow(" left ", " center ", " right ", 16);
+	assert.equal(visibleWidth(line), 16);
+	assert.ok(!line.includes("center"));
+	assert.ok(line.includes("left") && line.includes("right"));
+});
+
+test("layoutRow truncates side segments rather than overflowing", () => {
+	const line = layoutRow("a-very-long-left-label", "", "and-right", 16);
+	assert.ok(visibleWidth(line) <= 16);
+});
+
+// The status row's right segment degrades semantically, not char-by-char: the
+// editor hands layoutRow a ladder of candidates (widest first). `flex` marks
+// the model as the only part allowed to trim with `…`; pre/post stay verbatim.
+const withPersona = [
+	{ pre: "3 agents  anthropic/opus-4-8 · Elite " }, // full: provider slug + persona
+	{ pre: "3 agents  ", flex: "opus-4-8", post: " · Elite " }, // provider hidden; model may trim
+	{ pre: "3 agents  ", post: "Elite " }, // tightest: persona only
+];
+const LEFT = "~/x · main"; // 10 cols
+
+test("layoutRow keeps the full provider slug while it fits", () => {
+	const line = layoutRow(LEFT, "", withPersona, 60);
+	assert.equal(visibleWidth(line), 60);
+	assert.ok(line.includes("anthropic/opus-4-8") && line.includes("Elite"));
+});
+
+test("layoutRow hides the provider first when narrowing", () => {
+	const line = layoutRow(LEFT, "", withPersona, 40);
+	assert.equal(visibleWidth(line), 40);
+	assert.ok(!line.includes("anthropic/"));
+	assert.ok(line.includes("opus-4-8") && line.includes("Elite")); // model still whole
+});
+
+test("layoutRow then trims the model with … keeping the persona intact", () => {
+	const line = layoutRow(LEFT, "", withPersona, 36);
+	assert.equal(visibleWidth(line), 36);
+	const plain = stripAnsi(line);
+	assert.ok(!plain.includes("opus-4-8")); // model no longer whole …
+	assert.ok(plain.includes("…")); // … but trimmed, not dropped
+	assert.ok(plain.includes("Elite") && plain.includes(LEFT)); // persona + path untouched
+});
+
+test("layoutRow finally keeps the path left and the persona right, model hidden", () => {
+	const line = layoutRow(LEFT, "", withPersona, 30);
+	assert.equal(visibleWidth(line), 30);
+	const plain = stripAnsi(line);
+	assert.ok(!plain.includes("opus") && !plain.includes("…")); // model gone entirely
+	assert.ok(plain.includes("Elite") && plain.includes(LEFT));
+});
+
+test("layoutRow without a persona keeps trimming the model as the last resort", () => {
+	const noPersona = [{ pre: "anthropic/opus-4-8 " }, { flex: "opus-4-8", post: " " }];
+	const line = layoutRow("~/x", "", noPersona, 8);
+	assert.equal(visibleWidth(line), 8);
+	assert.ok(stripAnsi(line).includes("op…")); // below the usual floor: last candidate still trims
+});
+
+test("resolveSegment hard-truncates the last candidate when nothing fits", () => {
+	const out = resolveSegment([{ pre: "3 agents  ", post: "Elite " }], 6);
+	assert.ok(visibleWidth(out) <= 6);
+	assert.equal(resolveSegment(withPersona, 0), "");
+});
+
+test("frameEditor accepts a degradation ladder for the status right segment", () => {
+	const ew = 30 - 2 * GUTTER - 2;
+	const raw = ["─".repeat(ew), ` hi${" ".repeat(ew - 3)}`, "─".repeat(ew)];
+	const out = frameEditor(raw, {
+		boxWidth: 30,
+		leftMargin: 0,
+		style: ROUNDED,
+		border: id,
+		prompt: "›",
+		statusLeft: " ~/x",
+		statusRight: [{ pre: "anthropic/opus-4-8 · Elite " }, { pre: "Elite " }],
+	});
+	const status = out[out.length - 2];
+	assert.ok(status.includes("Elite") && !status.includes("anthropic"));
+	for (const line of out) assert.equal(visibleWidth(line), 30);
+});
+
+test("frameEditor drops the rules and builds a clean rounded box with chrome inside", () => {
+	// boxWidth 14 → interior 12 → editor width 12 − 2·GUTTER = 8.
+	const ew = 14 - 2 * GUTTER - 2;
+	assert.equal(ew, 8);
+	const raw = ["─".repeat(ew), " hello  ", "─".repeat(ew)];
+	const out = frameEditor(raw, {
+		boxWidth: 14,
+		leftMargin: 3,
+		style: ROUNDED,
+		border: id,
+		prompt: "›",
+		spinner: "⠹",
+		statusLeft: "L",
+		statusRight: "R",
+	});
+
+	assert.equal(out.length, 4); // top + 1 content + status + bottom
+	for (const line of out) assert.equal(visibleWidth(line), 3 + 14); // margin + box
+
+	assert.ok(/^ {3}╭─+╮$/.test(out[0])); // continuous top border, no labels cut in
+	assert.ok(/^ {3}╰─+╯$/.test(out[out.length - 1]));
+	assert.ok(out[1].includes("›") && out[1].includes("hello") && out[1].includes("⠹")); // chrome + content inside
+	assert.ok(out[2].includes("L") && out[2].includes("R")); // status row
+	assert.ok(!out.slice(1, 3).some((l) => l.includes("─"))); // original rules gone from body
+	assert.ok(out[1].startsWith("   │") && out[1].endsWith("│"));
+});
+
+test("frameEditor shows no spinner glyph when idle", () => {
+	const ew = 14 - 2 * GUTTER - 2;
+	const raw = ["─".repeat(ew), " hi     ", "─".repeat(ew)];
+	const out = frameEditor(raw, { boxWidth: 14, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", spinner: "" });
+	assert.ok(out[1].includes("›") && !out[1].includes("⠹"));
+	for (const line of out) assert.equal(visibleWidth(line), 14);
+});
+
+test("frameEditor keeps the cursor row full width despite pi-tui's cursor marker", () => {
+	// Regression: pi-tui embeds a BEL-terminated APC marker (`\x1b_pi:c\x07`) at the
+	// cursor position. If it's miscounted as printable, fit() under-pads that row by
+	// 5 columns and the right rail pulls in (seen on first idle render).
+	const MARKER = "\x1b_pi:c\x07";
+	const ew = 20 - 2 * GUTTER - 2;
+	const cursorLine = ` ${MARKER}${" ".repeat(ew - 1)}`; // empty editor: padding + marker + fill
+	const raw = ["─".repeat(ew), cursorLine, "─".repeat(ew)];
+	const out = frameEditor(raw, {
+		boxWidth: 20,
+		leftMargin: 2,
+		style: ROUNDED,
+		border: id,
+		prompt: "›",
+		spinner: "", // idle — exactly the reported scenario
+		statusLeft: "~/x",
+		statusRight: "model",
+	});
+	// Measure what the terminal actually renders: the TUI strips the marker before
+	// drawing, so rendered width = visibleWidth of the line with the marker removed.
+	// (Measuring the marker-bearing line with visibleWidth would reuse the same
+	// ruler fit() used — a miscount would cancel out and hide the bug.)
+	for (const line of out) assert.equal(visibleWidth(line.replaceAll(MARKER, "")), 22); // margin + box, every row
+	assert.ok(out[1].includes(MARKER)); // marker survives for the TUI to consume
+});
+
+test("scrollMarker only fires on Pi's 'N more' rules, not on plain ones", () => {
+	assert.equal(scrollMarker("─── ↑ 3 more ──────", "↑"), "↑");
+	assert.equal(scrollMarker("─── ↓ 12 more ─────", "↓"), "↓");
+	assert.equal(scrollMarker("─── ↑ 3 more ──────", "↓"), ""); // wrong direction
+	assert.equal(scrollMarker("─".repeat(20), "↑"), ""); // ordinary rule
+	assert.equal(scrollMarker(undefined, "↓"), "");
+});
+
+test("frameEditor re-hangs the editor's scroll indicators in the side gutters", () => {
+	// Pi renders "more content above/below" *into* the rules we drop. Without this
+	// the box would silently hide the fact that the buffer continues.
+	const ew = 20 - 2 * GUTTER - 2;
+	const row = (s: string) => s.padEnd(ew);
+	const raw = [`── ↑ 3 more ${"─".repeat(ew - 12)}`, row(" one"), row(" two"), `── ↓ 7 more ${"─".repeat(ew - 12)}`];
+	const out = frameEditor(raw, { boxWidth: 20, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", statusLeft: "~" });
+	assert.ok(out[1].includes("↑")); // first content row: more above
+	assert.ok(out[2].includes("↓")); // last content row: more below
+	assert.ok(!out.some((l) => l.includes("more"))); // the rules themselves stay dropped
+	for (const line of out) assert.equal(visibleWidth(line), 20);
+});
+
+test("frameEditor lets the spinner win row 0's gutter over the ↑ marker", () => {
+	const ew = 20 - 2 * GUTTER - 2;
+	const row = (s: string) => s.padEnd(ew);
+	const raw = [`── ↑ 3 more ${"─".repeat(ew - 12)}`, row(" one"), "─".repeat(ew)];
+	const out = frameEditor(raw, { boxWidth: 20, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", spinner: "⠹" });
+	assert.ok(out[1].includes("⠹") && !out[1].includes("↑")); // motion beats the hint
+	for (const line of out) assert.equal(visibleWidth(line), 20);
+});
+
+test("frameEditor keeps autocomplete rows inside the frame", () => {
+	// boxWidth 12 → interior 10 → editor width 6.
+	const ew = 12 - 2 * GUTTER - 2;
+	assert.equal(ew, 6);
+	const raw = ["─".repeat(ew), " text ", "─".repeat(ew), "/init ", "/clear"];
+	const out = frameEditor(raw, { boxWidth: 12, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", statusLeft: "~" });
+	// 1 content + 2 autocomplete = 3 body rows, plus top, status, and bottom
+	assert.equal(out.length, 6);
+	assert.ok(out.some((l) => l.includes("/init")) && out.some((l) => l.includes("/clear")));
+	for (const line of out) assert.equal(visibleWidth(line), 12);
+});
+
+test("frameEditor preserves autocomplete after Pi's width-4 truncated scroll rule", () => {
+	const raw = ["─...", " x  ", "─...", " zz "];
+	const out = frameEditor(raw, { boxWidth: 10, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", statusLeft: "~" });
+	assert.ok(out.some((line) => line.includes("zz")), "autocomplete row survives below the truncated rule");
+	assert.ok(!out.some((line) => line.includes("─...")), "the truncated rule itself is still removed");
+	for (const line of out) assert.equal(visibleWidth(line), 10);
+});

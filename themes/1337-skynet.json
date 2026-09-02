@@ -1,0 +1,95 @@
+{
+	"$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+	"name": "1337-skynet",
+	"vars": {
+		"void": "#0c0304",
+		"panel": "#1c0709",
+		"line": "#5e1519",
+		"ember": "#e5464c",
+		"moss": "#cf5a5e",
+		"diffContext": "#7e2226",
+		"phosphor": "#ff5a5a",
+		"mint": "#ff9a8f",
+		"neon": "#ff2b2b",
+		"halo": "#ffe0dc",
+		"caution": "#ffc24a",
+		"alarm": "#ff1717",
+		"leaf": "#ff8a3c",
+		"selBg": "#300b0d",
+		"userBg": "#230809",
+		"okBg": "#281206",
+		"errBg": "#300a0a"
+	},
+	"colors": {
+		"accent": "neon",
+		"border": "line",
+		"borderAccent": "neon",
+		"borderMuted": "line",
+		"success": "leaf",
+		"error": "alarm",
+		"warning": "caution",
+		"muted": "moss",
+		"dim": "ember",
+		"text": "phosphor",
+		"thinkingText": "moss",
+
+		"selectedBg": "selBg",
+		"userMessageBg": "panel",
+		"userMessageText": "halo",
+		"customMessageBg": "userBg",
+		"customMessageText": "phosphor",
+		"customMessageLabel": "neon",
+		"toolPendingBg": "panel",
+		"toolSuccessBg": "okBg",
+		"toolErrorBg": "errBg",
+		"toolTitle": "neon",
+		"toolOutput": "moss",
+
+		"mdHeading": "halo",
+		"mdLink": "neon",
+		"mdLinkUrl": "ember",
+		"mdCode": "caution",
+		"mdCodeBlock": "phosphor",
+		"mdCodeBlockBorder": "line",
+		"mdQuote": "moss",
+		"mdQuoteBorder": "ember",
+		"mdHr": "line",
+		"mdListBullet": "neon",
+
+		"toolDiffAdded": "leaf",
+		"toolDiffRemoved": "alarm",
+		"toolDiffContext": "diffContext",
+
+		"syntaxComment": "ember",
+		"syntaxKeyword": "neon",
+		"syntaxFunction": "halo",
+		"syntaxVariable": "phosphor",
+		"syntaxString": "moss",
+		"syntaxNumber": "caution",
+		"syntaxType": "mint",
+		"syntaxOperator": "moss",
+		"syntaxPunctuation": "ember",
+
+		"thinkingOff": "line",
+		"thinkingMinimal": "ember",
+		"thinkingLow": "moss",
+		"thinkingMedium": "phosphor",
+		"thinkingHigh": "neon",
+		"thinkingXhigh": "halo",
+
+		"bashMode": "caution"
+	},
+	"export": {
+		"pageBg": "#0c0304",
+		"cardBg": "#1c0709",
+		"infoBg": "#230809"
+	},
+	"pi1337": {
+		"background": "on",
+		"avatar": {
+			"align": "center",
+			"placement": "belowEditor",
+			"idle": "assets/skynet-welcome.png"
+		}
+	}
+}

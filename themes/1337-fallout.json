@@ -1,0 +1,98 @@
+{
+	"$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+	"name": "1337-fallout",
+	"vars": {
+		"void": "#02130a",
+		"panel": "#072b16",
+		"line": "#1c6a37",
+		"ember": "#34af5d",
+		"moss": "#48c56d",
+		"diffContext": "#276f3f",
+		"phosphor": "#38ff7d",
+		"mint": "#86ffab",
+		"neon": "#1cff6a",
+		"halo": "#ccffdb",
+		"caution": "#ffcf57",
+		"alarm": "#ff7a34",
+		"leaf": "#4be072",
+		"selBg": "#0f3a20",
+		"userBg": "#0c2f1a",
+		"okBg": "#0b331a",
+		"errBg": "#2c1a07"
+	},
+	"colors": {
+		"accent": "neon",
+		"border": "line",
+		"borderAccent": "neon",
+		"borderMuted": "line",
+		"success": "leaf",
+		"error": "alarm",
+		"warning": "caution",
+		"muted": "moss",
+		"dim": "ember",
+		"text": "phosphor",
+		"thinkingText": "moss",
+
+		"selectedBg": "selBg",
+		"userMessageBg": "panel",
+		"userMessageText": "halo",
+		"customMessageBg": "userBg",
+		"customMessageText": "phosphor",
+		"customMessageLabel": "neon",
+		"toolPendingBg": "panel",
+		"toolSuccessBg": "okBg",
+		"toolErrorBg": "errBg",
+		"toolTitle": "neon",
+		"toolOutput": "moss",
+
+		"mdHeading": "halo",
+		"mdLink": "neon",
+		"mdLinkUrl": "ember",
+		"mdCode": "caution",
+		"mdCodeBlock": "phosphor",
+		"mdCodeBlockBorder": "line",
+		"mdQuote": "moss",
+		"mdQuoteBorder": "ember",
+		"mdHr": "line",
+		"mdListBullet": "neon",
+
+		"toolDiffAdded": "leaf",
+		"toolDiffRemoved": "alarm",
+		"toolDiffContext": "diffContext",
+
+		"syntaxComment": "ember",
+		"syntaxKeyword": "neon",
+		"syntaxFunction": "halo",
+		"syntaxVariable": "phosphor",
+		"syntaxString": "moss",
+		"syntaxNumber": "caution",
+		"syntaxType": "mint",
+		"syntaxOperator": "moss",
+		"syntaxPunctuation": "ember",
+
+		"thinkingOff": "line",
+		"thinkingMinimal": "ember",
+		"thinkingLow": "moss",
+		"thinkingMedium": "phosphor",
+		"thinkingHigh": "neon",
+		"thinkingXhigh": "halo",
+
+		"bashMode": "caution"
+	},
+	"export": {
+		"pageBg": "#02130a",
+		"cardBg": "#072b16",
+		"infoBg": "#0c2f1a"
+	},
+	"pi1337": {
+		"background": "on",
+		"avatar": {
+			"align": "center",
+			"placement": "belowEditor",
+			"idle": "assets/vaultboy-wink.png",
+			"working": "assets/vaultboy-gum.png",
+			"confused": "assets/vaultboy-dizzy.png",
+			"error": "assets/vaultboy-ko.png"
+		}
+	}
+}
