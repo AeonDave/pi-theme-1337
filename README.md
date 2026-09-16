@@ -167,15 +167,16 @@ extension (see [Pi themes](https://pi.dev/docs/latest/themes) and the
 | Concern | Mechanism |
 |---------|-----------|
 | Phosphor palettes | `themes/*.json` (all eight registered via `pi.themes`), applied with `ctx.ui.setTheme(...)` — the default resolved from `PI_1337_THEME` |
-| Framed, centered editor | `ctx.ui.setEditorComponent` → a `CustomEditor` subclass that renders the real editor at a reduced width, then wraps it in a rounded panel with margins |
+| Framed, centered editor | `ctx.ui.setEditorComponent` → a `CustomEditor` subclass that renders the real editor at a reduced width, then wraps it in a rounded panel with margins; spinner-only redraws reuse the base editor layout until input, mouse, resize, or autocomplete changes it |
 | Status on the frame | lifecycle events snapshot `ctx.getContextUsage()` plus session name/cost outside the render path; the editor combines those snapshots with `ctx.cwd`, `ctx.model`, the live subagent count, `footerData.getGitBranch()` (re-rendered via `onBranchChange`), and the published persona status. All foreign inline labels are terminal-control/bidi sanitized before framing. |
 | Clean-copy shortcut | `ctx.ui` `registerShortcut` + `copyToClipboard(editor.getText())` — copies the logical buffer, bypassing the rendered frame glyphs |
 | Hide the footer & spinner row | `ctx.ui.setFooter(() => emptyComponent)` + `ctx.ui.setWorkingVisible(false)` — activity moves into the frame spinner |
-| Out-of-band stderr resilience | while the frame is active, a reversible pass-through guard observes raw stderr writes from other extensions, leaves their bytes untouched, and schedules one `tui.requestRender(true)` per synchronous burst so Pi resynchronizes its cached rows/cursor without a repaint storm |
+| Out-of-band stderr resilience | while the frame is active, a reversible pass-through guard observes raw stderr writes from other extensions, leaves their bytes untouched, and schedules one `tui.requestRender(true)` per short (16 ms) burst so Pi resynchronizes its cached rows/cursor without a repaint storm |
 | Restore everything | `/pi-1337` off / shutdown → every primitive set back to default |
 
-The editor subclass only overrides `render` — all editing, autocomplete, and
-keybindings stay the base `CustomEditor`'s. Because Pi draws the cursor *inline*
+The editor subclass only changes presentation: all editing, autocomplete, and
+keybindings stay the base `CustomEditor`'s, while transparent cache-invalidation
+hooks forward input/text/padding (and Pi 0.85+ mouse events) to that base. Because Pi draws the cursor *inline*
 (as text, not a coordinate), shifting every row by the same left margin **and**
 fixed-width prompt gutter keeps it correct. TUI-only: in `rpc`/`json`/`print`
 modes it is a no-op.

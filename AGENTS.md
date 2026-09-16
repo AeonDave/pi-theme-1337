@@ -93,10 +93,15 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   that disagree with each other: 0.83.0 reads `का` as one column, current pi-tui
   as two, and the box is exact on both because it is laid out with the same
   ruler that paints it.
-- **Only override `render`.** `FramedEditor` extends `CustomEditor` and changes
-  nothing else — editing, autocomplete, history, and keybindings stay the base
-  class's. Never swallow input. (The clean-copy feature stays out of the editor:
-  it's a top-level `registerShortcut` reading `getText()`, not a key intercept.)
+- **Render-only presentation with transparent cache invalidation.** `FramedEditor`
+  extends `CustomEditor` and caches the base editor's raw layout across
+  spinner-only redraws; its `invalidate`/input/text/padding overrides only drop
+  that cache and forward to the base class. On Pi 0.85+'s optional mouse API it
+  forwards `handleMouse` the same way, retaining compatibility with 0.84 while
+  invalidating cursor changes. Editing, autocomplete, history, and keybindings
+  stay the base class's. Never swallow input. (The clean-copy feature stays out
+  of the editor: it's a top-level `registerShortcut` reading `getText()`, not a
+  key intercept.)
 - **The border is clean; the chrome is inside.** The rounded outline carries no
   labels. What's kept — prompt sigil + spinner (row 0 gutters) and
   workspace+branch+session / usage+cost / agents+provider/model+persona
@@ -138,7 +143,7 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   write `console.warn`/`process.stderr.write` after Pi's differential TUI is live.
   While the 1337 chrome is active, `redraw-guard.ts` calls the original writer
   first with the exact receiver/arguments/return value, then schedules one
-  microtask repair per synchronous write burst through public
+  coalesced 16ms repair per short write burst through public
   `tui.requestRender(true)` to clear stale cached rows/cursor. Never
   wrap stdout (pi-tui renders there), never rewrite/buffer the foreign message,
   and dispose ownership-safely: restore only if our wrapper is still installed.

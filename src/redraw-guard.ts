@@ -10,9 +10,18 @@ export interface FullRedrawTarget {
 	requestRender(force?: boolean): void;
 }
 
-export type RedrawScheduler = (task: () => void) => void;
+export type RedrawScheduler = (task: () => void, delayMs?: number) => void;
 
-const requestAfterBurst: RedrawScheduler = (task) => queueMicrotask(task);
+/**
+ * Keep one frame of distance from a foreign write burst. A microtask only
+ * coalesces synchronous chunks; diagnostics arriving from an async stream
+ * would otherwise force one immediate full repaint per chunk and bypass
+ * pi-tui's normal render throttle.
+ */
+const REDRAW_COALESCE_MS = 16;
+const requestAfterBurst: RedrawScheduler = (task, delayMs = REDRAW_COALESCE_MS) => {
+	setTimeout(task, delayMs);
+};
 
 /** Reset Pi TUI's cached lines/cursor and repaint the complete screen. */
 export function forceFullRedraw(target: FullRedrawTarget | undefined): void {
@@ -21,9 +30,10 @@ export function forceFullRedraw(target: FullRedrawTarget | undefined): void {
 
 /**
  * Observe a stream that writes outside Pi TUI's renderer and request a repair
- * after the original synchronous write burst. The original is called first, with the
+ * after the original short write burst. The original is called first, with the
  * exact receiver, arguments and return value; only a redraw side effect follows.
- * The default microtask scheduler coalesces adjacent chunks before Pi's next render.
+ * The default scheduler coalesces adjacent chunks into a short frame window
+ * before Pi's next render, including writes arriving from asynchronous streams.
  *
  * Disposal is ownership-safe: if another extension wrapped the stream after us,
  * its writer is left installed and this inactive wrapper becomes pass-through.
@@ -52,7 +62,7 @@ export function installOutOfBandRedrawGuard(
 		if (active && !queued) {
 			queued = true;
 			try {
-				schedule(flush);
+				schedule(flush, REDRAW_COALESCE_MS);
 			} catch {
 				queued = false;
 			}

@@ -71,8 +71,31 @@ test("the default repair runs after the raw burst and coalesces it", async () =>
 	assert.equal(sink.write("warning"), true);
 	assert.equal(sink.write("same burst"), true);
 	assert.deepEqual(order, ["raw-write", "raw-write"], "foreign bytes are visible before the repair");
-	await Promise.resolve();
+	await new Promise((resolve) => setTimeout(resolve, 50));
 	assert.deepEqual(order, ["raw-write", "raw-write", "force-redraw"]);
+	dispose();
+});
+
+test("bounds repairs to a short frame window for asynchronous writes", () => {
+	const scheduled: Array<{ task: () => void; delayMs: number | undefined }> = [];
+	const sink: RedrawWritable = { write: () => true };
+	let redraws = 0;
+	const dispose = installOutOfBandRedrawGuard(
+		sink,
+		() => redraws++,
+		(task, delayMs) => scheduled.push({ task, delayMs }),
+	);
+
+	sink.write("first async chunk");
+	assert.equal(scheduled.length, 1);
+	assert.ok((scheduled[0]?.delayMs ?? 0) >= 16, "repair must yield to a bounded frame window");
+
+	// A later write before the trailing callback must join the same repair.
+	sink.write("second async chunk");
+	assert.equal(scheduled.length, 1);
+	scheduled[0]?.task();
+	assert.equal(redraws, 1);
+
 	dispose();
 });
 

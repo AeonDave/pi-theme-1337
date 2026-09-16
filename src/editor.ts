@@ -10,8 +10,9 @@
  * row's gutters carry the `›` prompt sigil (left) and the working spinner
  * (right); a dedicated status row above the bottom edge carries the workspace
  * (left), token usage (center), and the live subagent count + model + persona
- * (right). All editing/keybinding behavior is the base `CustomEditor`'s — we
- * only override `render`.
+ * (right). All editing/keybinding behavior is the base `CustomEditor`'s — the
+ * subclass only changes presentation and invalidates its transparent raw-layout
+ * cache around state changes.
  */
 
 import {
@@ -32,7 +33,7 @@ import {
 	stableEmojiWidth,
 	usageLevel,
 } from "./format.ts";
-import { editorWidthFor, frameEditor, ROUNDED } from "./frame.ts";
+import { editorWidthFor, frameEditor, GUTTER, ROUNDED } from "./frame.ts";
 import { chooseBox } from "./width.ts";
 
 export interface FramedEditorDeps {
@@ -58,10 +59,80 @@ export interface FramedEditorDeps {
 }
 
 class FramedEditor extends CustomEditor {
+	/**
+	 * Pi asks every component to render again for the 90 ms spinner tick. The
+	 * base editor has no render cache, so relaying that call would re-wrap and
+	 * re-measure the complete input on every tick even when no editor state
+	 * changed. Keep only the base editor's raw lines: the outer frame is still
+	 * rebuilt each time because its spinner/status chrome is live.
+	 */
+	private rawRenderCache:
+		| {
+			width: number;
+			terminalRows: number;
+			focused: boolean;
+			paddingX: number;
+			raw: string[];
+		}
+		| undefined;
+
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, private readonly deps: FramedEditorDeps) {
 		super(tui, theme, keybindings, { paddingX: 1 });
 		deps.bindTui(tui);
 		deps.bindEditor(this);
+	}
+
+	private invalidateRawRenderCache(): void {
+		this.rawRenderCache = undefined;
+	}
+
+	/** State-changing editor APIs must invalidate the raw layout cache. */
+	override invalidate(): void {
+		this.invalidateRawRenderCache();
+		super.invalidate();
+	}
+
+	override handleInput(data: string): void {
+		this.invalidateRawRenderCache();
+		super.handleInput(data);
+	}
+
+	override setPaddingX(padding: number): void {
+		this.invalidateRawRenderCache();
+		super.setPaddingX(padding);
+	}
+
+	override setText(text: string): void {
+		this.invalidateRawRenderCache();
+		super.setText(text);
+	}
+
+	override insertTextAtCursor(text: string): void {
+		this.invalidateRawRenderCache();
+		super.insertTextAtCursor(text);
+	}
+
+	/**
+	 * Pi 0.85 adds mouse routing to Editor. Keep this optional at compile time
+	 * because the package's compatibility range still includes 0.84, but forward
+	 * to the host implementation when present so a click that moves the cursor
+	 * cannot leave a spinner redraw on the old raw layout.
+	 */
+	handleMouse(event: unknown): unknown {
+		this.invalidateRawRenderCache();
+		const base = (CustomEditor.prototype as unknown as {
+			handleMouse?: (this: FramedEditor, value: unknown) => unknown;
+		}).handleMouse;
+		if (!base || !event || typeof event !== "object") return undefined;
+		const mouse = event as { x?: unknown; width?: unknown };
+		if (typeof mouse.x !== "number" || typeof mouse.width !== "number") return base.call(this, event);
+		const { fallback, boxWidth, leftMargin } = chooseBox(mouse.width, this.deps.maxWidth, this.deps.minMargin);
+		if (fallback) return base.call(this, event);
+		// The framed component is laid out at terminal width, while Editor.handleMouse
+		// expects coordinates in the reduced raw-editor viewport.
+		const editorWidth = editorWidthFor(boxWidth);
+		const frameLeft = leftMargin + 1 + GUTTER; // margin + left rail + left gutter
+		return base.call(this, { ...(event as Record<string, unknown>), x: mouse.x - frameLeft, width: editorWidth });
 	}
 
 	render(width: number): string[] {
@@ -73,7 +144,29 @@ class FramedEditor extends CustomEditor {
 		const editorWidth = editorWidthFor(boxWidth);
 		if (fallback || editorWidth < 4) return super.render(width);
 
-		const raw = super.render(editorWidth);
+		// Autocomplete suggestions can change asynchronously without changing the
+		// editor text, so let the base editor render freely while its menu is open.
+		// The normal steady state (including spinner-only redraws) reuses its raw
+		// layout and therefore avoids a full grapheme/wrap pass every 90 ms.
+		const canReuseRaw = !this.isShowingAutocomplete();
+		const cached = this.rawRenderCache;
+		const raw =
+			canReuseRaw &&
+			cached?.width === editorWidth &&
+			cached.terminalRows === this.tui.terminal.rows &&
+			cached.focused === this.focused &&
+			cached.paddingX === this.getPaddingX()
+				? cached.raw
+				: super.render(editorWidth);
+		if (canReuseRaw && raw !== cached?.raw) {
+			this.rawRenderCache = {
+				width: editorWidth,
+				terminalRows: this.tui.terminal.rows,
+				focused: this.focused,
+				paddingX: this.getPaddingX(),
+				raw,
+			};
+		}
 		if (raw.length < 2) return raw;
 
 		const theme = ctx.ui.theme;

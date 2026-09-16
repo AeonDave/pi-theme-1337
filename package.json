@@ -1,6 +1,6 @@
 {
   "name": "pi-1337",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "description": "A minimalist phosphor-green redesign for Pi: a true-monochrome green-screen theme plus a stripped-down TUI that frames the editor and surfaces the workspace, token usage, the chosen model (with the active persona, if any), and a single working spinner on the box borders.",
