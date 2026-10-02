@@ -1,11 +1,48 @@
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
-import { backgroundEnv, chooseStartupTheme, copyShortcut, envPalette, isBundledTheme } from "../src/config.ts";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, test } from "node:test";
+import {
+	backgroundEnv,
+	chooseStartupTheme,
+	configFileSettings,
+	copyShortcut,
+	envPalette,
+	hiddenThinkingLabel,
+	isBundledTheme,
+	isDisabled,
+	resolveSettings,
+	stateDir,
+} from "../src/config.ts";
+
+const tempDirs: string[] = [];
+
+// Every test starts from an EMPTY state dir so the developer's real
+// ~/.pi/agent/1337-theme/config.json can never leak into these assertions.
+beforeEach(() => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-1337-empty-"));
+	tempDirs.push(dir);
+	process.env.PI_1337_STATE_DIR = dir;
+});
+
+/** Point the state dir at a scratch directory and write `config.json` into it. */
+function withConfigFile(contents: string | null): string {
+	const dir = mkdtempSync(join(tmpdir(), "pi-1337-cfg-"));
+	tempDirs.push(dir);
+	if (contents !== null) writeFileSync(join(dir, "config.json"), contents);
+	process.env.PI_1337_STATE_DIR = dir;
+	return dir;
+}
 
 afterEach(() => {
 	delete process.env.PI_1337_COPY_KEY;
 	delete process.env.PI_1337_THEME;
 	delete process.env.PI_1337_BG;
+	delete process.env.PI_1337_DISABLE;
+	delete process.env.PI_1337_THINKING_LABEL;
+	delete process.env.PI_1337_STATE_DIR;
+	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 test("copyShortcut defaults to alt+c when unset", () => {
@@ -94,4 +131,93 @@ test("chooseStartupTheme lets an explicit env pin win over the persisted choice"
 	process.env.PI_1337_THEME = "amber";
 	assert.equal(chooseStartupTheme("1337-ice"), "1337-amber");
 	assert.equal(chooseStartupTheme("dark"), "1337-amber");
+});
+
+// --- config.json state file -------------------------------------------------
+
+test("stateDir honors PI_1337_STATE_DIR, else <agent-dir>/1337-theme", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-1337-cfg-"));
+	tempDirs.push(dir);
+	process.env.PI_1337_STATE_DIR = dir;
+	assert.equal(stateDir(), dir);
+	delete process.env.PI_1337_STATE_DIR;
+	// Default namespaced under Pi's agent dir, like claude-native/ and persona/.
+	assert.match(stateDir(), /[/\\]1337-theme$/);
+	assert.match(stateDir(), /[/\\]\.pi[/\\]agent[/\\]1337-theme$/);
+});
+
+test("configFileSettings is empty when the file is absent", () => {
+	withConfigFile(null);
+	assert.deepEqual(configFileSettings(), {});
+});
+
+test("configFileSettings parses known keys and ignores unknown ones", () => {
+	withConfigFile(JSON.stringify({ theme: "ice", thinkingLabel: "...", nope: 1, disable: true }));
+	assert.deepEqual(configFileSettings(), { theme: "ice", thinkingLabel: "...", disable: true });
+});
+
+test("configFileSettings survives malformed JSON and non-object payloads", () => {
+	withConfigFile("{ not json");
+	assert.deepEqual(configFileSettings(), {});
+	withConfigFile(JSON.stringify([1, 2, 3]));
+	assert.deepEqual(configFileSettings(), {});
+});
+
+test("configFileSettings ignores wrong-typed values rather than throwing", () => {
+	withConfigFile(JSON.stringify({ theme: 42, thinkingLabel: false, copyKey: null }));
+	assert.deepEqual(configFileSettings(), {});
+});
+
+test("copyShortcut reads copyKey from the config file when the env var is unset", () => {
+	withConfigFile(JSON.stringify({ copyKey: "ctrl+alt+y" }));
+	delete process.env.PI_1337_COPY_KEY;
+	assert.equal(copyShortcut(), "ctrl+alt+y");
+});
+
+test("the env var still wins over the config file", () => {
+	withConfigFile(JSON.stringify({ copyKey: "ctrl+alt+y" }));
+	process.env.PI_1337_COPY_KEY = "ctrl+shift+p";
+	assert.equal(copyShortcut(), "ctrl+shift+p");
+});
+
+test("an empty copyKey in the config file disables the shortcut", () => {
+	withConfigFile(JSON.stringify({ copyKey: "" }));
+	delete process.env.PI_1337_COPY_KEY;
+	assert.equal(copyShortcut(), "");
+});
+
+test("hiddenThinkingLabel falls back to the config file, then to the default", () => {
+	withConfigFile(JSON.stringify({ thinkingLabel: "» spin" }));
+	assert.equal(hiddenThinkingLabel(), "» spin");
+	withConfigFile(null);
+	assert.equal(hiddenThinkingLabel(), "∴ thinking");
+});
+
+test("envPalette honors a theme pinned in the config file", () => {
+	withConfigFile(JSON.stringify({ theme: "amber" }));
+	delete process.env.PI_1337_THEME;
+	assert.equal(envPalette(), "1337-amber");
+});
+
+test("isDisabled honors disable:true in the config file", () => {
+	withConfigFile(JSON.stringify({ disable: true }));
+	assert.equal(isDisabled(), true);
+	withConfigFile(null);
+	assert.equal(isDisabled(), false);
+});
+
+test("backgroundEnv reads background from the config file", () => {
+	withConfigFile(JSON.stringify({ background: "on" }));
+	assert.equal(backgroundEnv(), "on");
+});
+
+test("resolveSettings merges env over file over defaults", () => {
+	withConfigFile(JSON.stringify({ theme: "ice", copyKey: "ctrl+alt+y", thinkingLabel: "file label" }));
+	process.env.PI_1337_COPY_KEY = "ctrl+shift+p";
+	const s = resolveSettings();
+	assert.equal(s.theme, "1337-ice"); // alias normalized to the registered id
+	assert.equal(s.copyKey, "ctrl+shift+p");
+	assert.equal(s.thinkingLabel, "file label");
+	assert.equal(s.disable, false);
+	assert.equal(s.background, undefined);
 });

@@ -64,28 +64,31 @@ panel, and selected-row backgrounds), and the nine syntax roles spread across di
 leaving the monochrome world. The siblings are contract-identical — same
 51 tokens — so switching themes never breaks the frame.
 
-### Theme-driven extras (`pi1337` block)
+### Theme-driven extras (`.pi1337` sidecar)
 
-Because these palettes are themes *for* pi-1337, a theme file may carry an
-optional `pi1337` block that the extension reads (Pi ignores it; it's outside the
-color contract). Two knobs today:
+Pi 1.0's published theme schema allows only color/theme fields at the JSON
+root. Keep extra configuration next to the palette instead: for
+`themes/1337-fallout.json`, use `themes/1337-fallout.pi1337` (JSON content,
+non-`.json` extension so Pi does not discover it as another theme):
 
 ```jsonc
 {
-  "name": "1337-fallout",
-  "colors": { /* … the 51 tokens … */ },
-  "export": { "pageBg": "#0a1206" },
-  "pi1337": {
-    "background": "on",            // tint the terminal window to the palette's void (env PI_1337_BG overrides)
-    "avatar": {                     // mascot beside the editor (below by default), reacting to task state
-      "idle":     "assets/vaultboy-wink.png",   // at rest / on startup
-      "working":  "assets/vaultboy-gum.png",    // while the model is answering
-      "confused": "assets/vaultboy-dizzy.png",  // during context compaction
-      "error":    "assets/vaultboy-ko.png"      // when a tool errored this turn
-    }
+  "background": "on",            // tint the terminal window to the palette's void (env PI_1337_BG overrides)
+  "avatar": {                     // mascot beside the editor (below by default), reacting to task state
+    "idle":     "assets/vaultboy-wink.png",   // at rest / on startup
+    "working":  "assets/vaultboy-gum.png",    // while the model is answering
+    "confused": "assets/vaultboy-dizzy.png",  // during context compaction
+    "error":    "assets/vaultboy-ko.png"      // when a tool errored this turn
   }
 }
 ```
+
+The sidecar travels with its theme, and image paths remain relative to the
+**theme file's directory**. Older custom themes with a root `pi1337` block
+continue to work when no sidecar is present, but their editor may flag that
+legacy key under Pi 1.0's strict published schema. Switching themes in
+`/settings` reloads the matching sidecar; after editing a sidecar in place, use
+`/reload` (Pi does not emit a theme-change event for sidecar edits).
 
 The avatar is a widget below the editor by default that swaps frame with the **task state**:
 `idle` (startup / at rest) → `working` (model generating) → `confused` (context
@@ -150,13 +153,27 @@ Neither extension requires the other; if no persona is active, that slot is simp
 
 ## Configuration
 
-| Env var | Default | Purpose |
-|---------|---------|---------|
-| `PI_1337_DISABLE` | _(off)_ | Any non-empty value disables the extension entirely. |
-| `PI_1337_THEME` | `on` | `off` keeps your current theme (redesign only); `green`/`amber`/`ice`/`cyber` (or `blue`)/`neon`/`split`/`fallout`/`skynet` (or a full id like `1337-ice`) pins a palette at startup, overriding the persisted `/settings` pick. Unset/`on`: a persisted bundled palette is kept, any other theme is replaced by the default green. |
-| `PI_1337_THINKING_LABEL` | `∴ thinking` | Label for the collapsed thinking row. |
-| `PI_1337_COPY_KEY` | `alt+c` | Shortcut that copies the input buffer as clean text. Set empty to disable. |
-| `PI_1337_BG` | _(theme)_ | Tint the **terminal window** background (not just Pi's cells) so the empty margins around the frame match the palette. `on`/`auto` uses the active palette's `void`; a `#rrggbb`/`#rgb` value forces that color; `off` leaves the terminal untouched. **Unset defers to the theme** (`pi1337.background` — `fallout`/`skynet` opt in); a set value overrides it. Applied via OSC 11, reset (OSC 111) on `/pi-1337` off or shutdown. A background **image** isn't settable from the app — that stays your terminal emulator's config. |
+Settings resolve **env var → `<agent-dir>/1337-theme/config.json` → built-in default**. The env var always wins, so a shell export overrides the file for one run while the file persists your standing choice.
+
+`config.json` lives at `~/.pi/agent/1337-theme/config.json` (honoring `PI_CODING_AGENT_DIR`), namespaced like every other Pi extension's state (`claude-native/`, `persona/`, `skill-optimizer/`). Use the same lowercase key as the env var:
+
+```json
+{
+  "theme": "cyber",
+  "copyKey": "alt+c"
+}
+```
+
+A missing, malformed, or wrongly-typed `config.json` is ignored and the defaults apply — a broken file never stops Pi from starting. `PI_1337_STATE_DIR` overrides the directory.
+
+| Env var | Config key | Default | Purpose |
+|---------|-----------|---------|---------|
+| `PI_1337_DISABLE` | `disable` | _(off)_ | Any non-empty value disables the extension entirely. |
+| `PI_1337_THEME` | `theme` | `on` | `off` keeps your current theme (redesign only); `green`/`amber`/`ice`/`cyber` (or `blue`)/`neon`/`split`/`fallout`/`skynet` (or a full id like `1337-ice`) pins a palette at startup, overriding the persisted `/settings` pick. Unset/`on`: a persisted bundled palette is kept, any other theme is replaced by the default green. |
+| `PI_1337_THINKING_LABEL` | `thinkingLabel` | `∴ thinking` | Label for the collapsed thinking row. |
+| `PI_1337_COPY_KEY` | `copyKey` | `alt+c` | Shortcut that copies the input buffer as clean text. Set empty to disable. |
+| `PI_1337_BG` | `background` | _(theme)_ | Tint the **terminal window** background (not just Pi's cells) so the empty margins around the frame match the palette. `on`/`auto` uses the active palette's `void`; a `#rrggbb`/`#rgb` value forces that color; `off` leaves the terminal untouched. **Unset defers to the theme sidecar** (`background` — `fallout`/`skynet` opt in); a set value overrides it. Applied via OSC 11, reset (OSC 111) on `/pi-1337` off or shutdown. A background **image** isn't settable from the app — that stays your terminal emulator's config. |
+| `PI_1337_STATE_DIR` | — | `<agent-dir>/1337-theme` | Overrides the directory holding `config.json`. |
 
 ## How it works
 
@@ -176,7 +193,9 @@ extension (see [Pi themes](https://pi.dev/docs/latest/themes) and the
 
 The editor subclass only changes presentation: all editing, autocomplete, and
 keybindings stay the base `CustomEditor`'s, while transparent cache-invalidation
-hooks forward input/text/padding (and Pi 0.85+ mouse events) to that base. Because Pi draws the cursor *inline*
+hooks forward input/text/padding (and mouse events) to that base. Autocomplete
+appears below the box at the base editor's original mouse row indices; the
+status row temporarily hides while suggestions are open. Because Pi draws the cursor *inline*
 (as text, not a coordinate), shifting every row by the same left margin **and**
 fixed-width prompt gutter keeps it correct. TUI-only: in `rpc`/`json`/`print`
 modes it is a no-op.

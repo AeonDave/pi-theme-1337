@@ -7,11 +7,37 @@
  * answering, thumbs-down when idle). A frame is either a PNG (`{ image }`,
  * rendered via the terminal image protocol) or ASCII (`{ lines }`, for terminals
  * with no image support). This module only turns the raw JSON value into frames
- * and picks one for the current state; index.ts owns loading/encoding + the
- * widget + coloring.
+ * picks one for the current state, and computes image cells for centering;
+ * index.ts owns loading/encoding + the widget + coloring.
  */
 
 import { sanitizeArtLine } from "./format.ts";
+
+/** Image width in cells for centering beside pi-tui's Image component. */
+export function avatarImageColumns(
+	dims: { widthPx: number; heightPx: number },
+	cell: { widthPx: number; heightPx: number },
+	maxWidth: number,
+	maxHeight: number,
+	protocol: "kitty" | "iterm2" | null | undefined,
+): number {
+	const iw = Math.max(1, dims.widthPx);
+	const ih = Math.max(1, dims.heightPx);
+	const widthCap = Math.max(1, Math.floor(maxWidth));
+	const heightCap = Math.max(1, Math.floor(maxHeight));
+	const widthScale = (widthCap * cell.widthPx) / iw;
+	const heightScale = (heightCap * cell.heightPx) / ih;
+	const scale = Math.min(widthScale, heightScale);
+	const upper = Math.max(1, Math.min(widthCap, Math.ceil((iw * scale) / cell.widthPx)));
+	if (protocol !== "kitty" || widthScale <= heightScale || upper <= 1) return upper;
+	// Pi's Kitty renderer chooses the less-distorted of the two neighbouring
+	// cell widths when the image is height-constrained; iTerm2 keeps the ceil.
+	const rows = Math.min(heightCap, Math.max(1, Math.ceil((ih * scale) / cell.heightPx)));
+	const ideal = (rows * cell.heightPx * iw) / (ih * cell.widthPx);
+	const lower = upper - 1;
+	const distortion = (count: number) => Math.max(count / ideal, ideal / count);
+	return distortion(lower) < distortion(upper) ? lower : upper;
+}
 
 /** One avatar frame: a PNG path OR literal ASCII lines (image preferred when both). */
 export interface AvatarSource {

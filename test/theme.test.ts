@@ -79,6 +79,24 @@ test("each theme's name matches its filename", () => {
 	}
 });
 
+test("all palettes satisfy Pi 1.0's published top-level theme schema", () => {
+	const schemaPath = join(import.meta.dirname, "..", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "modes", "interactive", "theme", "theme-schema.json");
+	const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as { additionalProperties: boolean; properties: Record<string, unknown> };
+	assert.equal(schema.additionalProperties, false, "keep the test pinned to the published strict contract");
+	for (const [file] of themes) {
+		const theme = JSON.parse(readFileSync(join(themesDir, file), "utf8")) as Record<string, unknown>;
+		assert.deepEqual(Object.keys(theme).filter((key) => !(key in schema.properties)), [], `${file}: unknown top-level fields`);
+	}
+});
+
+test("fallout and skynet extras live in adjacent non-theme sidecars", () => {
+	for (const name of ["1337-fallout", "1337-skynet"]) {
+		const extra = JSON.parse(readFileSync(join(themesDir, `${name}.pi1337`), "utf8")) as { background?: string; avatar?: unknown };
+		assert.equal(extra.background, "on");
+		assert.ok(extra.avatar, `${name}: avatar preserved`);
+	}
+});
+
 for (const [file, theme] of themes) {
 	test(`${file} defines all 51 required tokens and no unknown ones`, () => {
 		for (const token of REQUIRED) assert.ok(token in theme.colors, `${file} missing token: ${token}`);

@@ -83,16 +83,5 @@
 		"pageBg": "#02130a",
 		"cardBg": "#072b16",
 		"infoBg": "#0c2f1a"
-	},
-	"pi1337": {
-		"background": "on",
-		"avatar": {
-			"align": "center",
-			"placement": "belowEditor",
-			"idle": "assets/vaultboy-wink.png",
-			"working": "assets/vaultboy-gum.png",
-			"confused": "assets/vaultboy-dizzy.png",
-			"error": "assets/vaultboy-ko.png"
-		}
 	}
 }

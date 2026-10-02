@@ -3,11 +3,11 @@
  *
  * Pi's editor renders open-sided — a top `─` rule, the content lines (cursor
  * inline), a bottom `─` rule, then any autocomplete rows. `frameEditor` takes
- * that raw output, drops the two rules, and rebuilds a centered box whose
- * border is a single unbroken rounded outline. The chrome lives *inside* the
- * box, not cut into the border: the prompt sigil and spinner sit in the first
- * row's side gutters, and the workspace / token usage / model / persona sit on
- * a dedicated status row just above the bottom edge.
+ * that raw output, drops the two rules, and rebuilds a centered box around the
+ * editor content. Autocomplete stays below the box at Pi's original row indices.
+ * The chrome lives *inside* the box, not cut into the border: the prompt sigil
+ * and spinner sit in the first row's side gutters, and the workspace / token
+ * usage / model / persona sit on a status row when autocomplete is closed.
  *
  *      ╭────────────────────────────────────────────╮
  *      │ › refactor the auth module_             ⠹  │
@@ -105,6 +105,9 @@ export function resolveSegment(candidates: RowCandidate[], avail: number): strin
 /** True when a line is one of Pi's horizontal rules (so we can drop/locate it). */
 export function isRuleLine(line: string): boolean {
 	const plain = stripAnsi(line);
+	// Pi's border starts at column zero. Editor content and autocomplete are
+	// indented (including unselected suggestions whose labels are all dashes).
+	if (!/^[─═]/.test(plain)) return false;
 	// At editor widths 4–5, Pi clips "─── ↓ N more" to one/two rule
 	// glyphs plus a three-dot ellipsis. Recognize that exact terminal shape
 	// before applying the ordinary minimum-rule-length heuristic.
@@ -187,8 +190,7 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 
 	const bottomIdx = lastRuleIndex(raw);
 	const content = raw.slice(1, Math.max(1, bottomIdx)); // editor lines (rules dropped)
-	const below = raw.slice(bottomIdx + 1); // autocomplete rows, if any
-	const inner = content.concat(below);
+	const below = raw.slice(bottomIdx + 1); // autocomplete rows stay outside the box
 
 	const { style, border, boxWidth, leftMargin } = options;
 	const pad = " ".repeat(Math.max(0, leftMargin));
@@ -206,7 +208,7 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 	const down = scrollMarker(raw[bottomIdx], "↓");
 	const lastContent = content.length - 1;
 
-	const body = inner.map((line, i) => {
+	const body = content.map((line, i) => {
 		// First row carries the prompt (left) and the spinner (right) in its gutters;
 		// the rest get blank gutters so every content column lines up beneath the
 		// first. The otherwise-dead right gutters carry the scroll markers.
@@ -217,10 +219,16 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 	});
 
 	const rows = [top, ...body];
-	if (options.statusLeft || options.statusCenter || options.statusRight) {
+	// The base editor places autocomplete immediately after its bottom rule.
+	// Hide status while the menu is open so that row indices match without
+	// reaching into the base editor's private mouse/layout state.
+	if (below.length === 0 && (options.statusLeft || options.statusCenter || options.statusRight)) {
 		const interior = layoutRow(options.statusLeft ?? "", options.statusCenter ?? "", options.statusRight ?? "", INT);
 		rows.push(`${pad}${v}${interior}${v}`);
 	}
 	rows.push(bottom);
+	for (const line of below) {
+		rows.push(`${pad}${" ".repeat(1 + GUTTER)}${fit(line, editorWidth)}${" ".repeat(1 + GUTTER)}`);
+	}
 	return rows;
 }

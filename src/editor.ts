@@ -20,7 +20,7 @@ import {
 	type ExtensionContext,
 	type KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
+import type { EditorTheme, TUI, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import {
 	agentCount,
 	branchLabel,
@@ -118,21 +118,25 @@ class FramedEditor extends CustomEditor {
 	 * to the host implementation when present so a click that moves the cursor
 	 * cannot leave a spinner redraw on the old raw layout.
 	 */
-	handleMouse(event: unknown): unknown {
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		this.invalidateRawRenderCache();
 		const base = (CustomEditor.prototype as unknown as {
-			handleMouse?: (this: FramedEditor, value: unknown) => unknown;
+			handleMouse?: (this: FramedEditor, value: TuiMouseEvent) => TuiMouseEventResult | undefined;
 		}).handleMouse;
 		if (!base || !event || typeof event !== "object") return undefined;
 		const mouse = event as { x?: unknown; width?: unknown };
 		if (typeof mouse.x !== "number" || typeof mouse.width !== "number") return base.call(this, event);
 		const { fallback, boxWidth, leftMargin } = chooseBox(mouse.width, this.deps.maxWidth, this.deps.minMargin);
-		if (fallback) return base.call(this, event);
+		// render() uses the bare editor below this same inner-width threshold.
+		// Mouse must see the identical viewport or a narrow click shifts columns.
+		const editorWidth = editorWidthFor(boxWidth);
+		if (fallback || editorWidth < 4) return base.call(this, event);
 		// The framed component is laid out at terminal width, while Editor.handleMouse
 		// expects coordinates in the reduced raw-editor viewport.
-		const editorWidth = editorWidthFor(boxWidth);
 		const frameLeft = leftMargin + 1 + GUTTER; // margin + left rail + left gutter
-		return base.call(this, { ...(event as Record<string, unknown>), x: mouse.x - frameLeft, width: editorWidth });
+		// The frame keeps both content and autocomplete at the base editor's row
+		// indices; only the horizontal viewport differs.
+		return base.call(this, { ...event, x: mouse.x - frameLeft, width: editorWidth });
 	}
 
 	render(width: number): string[] {

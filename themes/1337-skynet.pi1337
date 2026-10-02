@@ -1,0 +1,8 @@
+{
+	"background": "on",
+	"avatar": {
+		"align": "center",
+		"placement": "belowEditor",
+		"idle": "assets/skynet-welcome.png"
+	}
+}

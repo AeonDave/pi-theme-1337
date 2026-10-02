@@ -17,7 +17,8 @@ pi-1337/
 │   ├── 1337-neon.json    # synthwave violet        │
 │   ├── 1337-split.json   # green + magenta gun     │
 │   ├── 1337-fallout.json # radioactive Pip-Boy lime │
-│   └── 1337-skynet.json  # Terminator red-on-black ┘
+│   ├── 1337-skynet.json  # Terminator red-on-black ┘
+│   └── 1337-{fallout,skynet}.pi1337 # adjacent JSON sidecars (not theme resources)
 ├── src/
 │   ├── index.ts        # wiring: events, /pi-1337 command, copy shortcut, apply/clear, theme switch, spinner timer
 │   ├── editor.ts       # FramedEditor (CustomEditor subclass) + setEditorComponent factory
@@ -52,9 +53,12 @@ drawn *inline* as inverse-video text), a bottom `─` rule, then autocomplete ro
    inner width (the rounded box spends two columns per side on chrome gutters
    plus the rails);
 3. hands the raw lines to `frameEditor` (pure), which drops the two rules, wraps
-   each remaining line in `│` rails with fixed-width side gutters (prompt `›` +
-   spinner on row 0), appends a status row, caps it with a clean rounded
-   `╭─╮`/`╰─╯` outline, and left-pads every line by `leftMargin`.
+   the content lines in `│` rails with fixed-width side gutters (prompt `›` +
+   spinner on row 0), caps them with a clean rounded `╭─╮`/`╰─╯` outline, and
+   left-pads every line by `leftMargin`. The status row is inside the box when
+   there is no menu; autocomplete goes below the box without rails and hides
+   the status row while open, so its row indices still match Pi's own mouse
+   layout (first suggestion at `visibleContentRows + 2`).
 
 Because the cursor is inline text (not a reported coordinate), left-padding the
 box **and** the fixed prompt gutter shift it correctly — no cursor math needed.
@@ -196,11 +200,15 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   over-wide frame row), while an image row is a single escape sequence drawn at
   the cursor column and is padded but never clipped.
   index.ts owns the image runtime imports (allowed alongside editor.ts); avatar.ts
-  stays pure (string parsing only). Both the tint and the avatar are read from a
-  `pi1337` block in the theme JSON (`background`, `avatar`) via `ctx.ui.theme.
-  sourcePath` — Pi tolerates the extra key (its TypeBox schema isn't strict; our
-  files already carry `$schema`), and these palettes are themes *for* pi-1337, so
-  carrying our config there is intended. Read in `apply()` into `themeConfig` +
+  stays pure (parsing plus protocol-aware image-cell geometry). Kitty may reserve
+  one fewer column than iTerm2 for a height-limited PNG; match pi-tui's size
+  decision when centering, and test against its public `renderImage().columns`.
+  Tint and avatar are read from a JSON sidecar named after the active theme
+  (`1337-fallout.json` → `1337-fallout.pi1337`) via `ctx.ui.theme.sourcePath`.
+  The non-`.json` extension prevents Pi's theme discovery from loading the
+  sidecar as a palette, and keeps the theme JSON valid against Pi 1.0's strict
+  published schema. A legacy root `pi1337` block remains a fallback only when
+  no sidecar exists. Read in `apply()` into `themeConfig` +
   `themeDir`, and re-read on a live `/settings` switch: Pi fires no theme event, so
   the empty footer's `render` (run every UI pass) performs only a cheap
   `theme.sourcePath` compare. An actual change schedules one post-render

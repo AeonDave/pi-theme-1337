@@ -83,13 +83,5 @@
 		"pageBg": "#0c0304",
 		"cardBg": "#1c0709",
 		"infoBg": "#230809"
-	},
-	"pi1337": {
-		"background": "on",
-		"avatar": {
-			"align": "center",
-			"placement": "belowEditor",
-			"idle": "assets/skynet-welcome.png"
-		}
 	}
 }

@@ -32,9 +32,9 @@ import {
 	visibleWidth as piVisibleWidth,
 } from "@earendil-works/pi-tui";
 import type { KeyId } from "@earendil-works/pi-tui";
-import { type AvatarFrames, type AvatarState, parseAvatar, selectAvatar } from "./avatar.ts";
+import { avatarImageColumns, type AvatarFrames, type AvatarState, parseAvatar, selectAvatar } from "./avatar.ts";
 import { OSC11_RESET, osc11Set, resolveBackground, resolveBackgroundHex } from "./background.ts";
-import { autoThemeEnabled, backgroundEnv, chooseStartupTheme, copyShortcut, hiddenThinkingLabel, isDisabled } from "./config.ts";
+import { autoThemeEnabled, backgroundEnv, chooseStartupTheme, copyShortcut, hiddenThinkingLabel, isDisabled, resetConfigCache } from "./config.ts";
 import { makeFramedEditorFactory } from "./editor.ts";
 import { formatCost, parsePersonaCost, type ContextUsageLike } from "./format.ts";
 import { forceFullRedraw, installOutOfBandRedrawGuard, type RedrawWritable } from "./redraw-guard.ts";
@@ -86,6 +86,11 @@ const MAX_WIDTH = 100;
 const MIN_MARGIN = 2;
 
 export default function pi1337(pi: ExtensionAPI) {
+	// A fresh factory (startup or `/reload`) re-reads config.json, so an edit to
+	// the file takes effect without restarting Pi. The loader bumps its cache
+	// generation on reload, so this module is re-evaluated anyway; resetting
+	// explicitly keeps that guarantee from depending on loader internals.
+	resetConfigCache();
 	if (isDisabled()) return;
 
 	let enabled = true;
@@ -117,10 +122,9 @@ export default function pi1337(pi: ExtensionAPI) {
 	let cachedContextUsage: ContextUsageLike | undefined;
 	let cachedCost = "";
 
-	// Read the pi-1337 bits a theme file carries (via its own sourcePath): the page
-	// background (`export.pageBg` = its `void`) and an optional `pi1337` block with a
-	// background opt-in and ASCII avatar. These palettes are themes *for* pi-1337, so
-	// carrying our config here is intended. A foreign/unreadable theme yields {}.
+	// Read the theme's page background and optional adjacent .pi1337 sidecar.
+	// Keep reading a legacy root pi1337 block when no sidecar exists, so custom
+	// themes created before the strict Pi 1.0 schema migration still work.
 	const readThemeConfig = (ctx: ExtensionContext): ThemeConfig => {
 		const path = ctx.ui.theme.sourcePath;
 		if (!path) return {};
@@ -129,11 +133,20 @@ export default function pi1337(pi: ExtensionAPI) {
 				export?: { pageBg?: unknown };
 				pi1337?: { background?: unknown; avatar?: unknown };
 			};
-			const avatar = json.pi1337?.avatar;
+			let extras = json.pi1337;
+			try {
+				const sidecarPath = /\.json$/i.test(path) ? path.replace(/\.json$/i, ".pi1337") : `${path}.pi1337`;
+				extras = JSON.parse(readFileSync(sidecarPath, "utf8")) as typeof extras;
+			} catch (error) {
+				// A missing sidecar permits older custom themes; a malformed one does
+				// not silently activate stale metadata from the theme JSON.
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") extras = undefined;
+			}
+			const avatar = extras?.avatar;
 			const avatarObj = avatar && typeof avatar === "object" && !Array.isArray(avatar) ? (avatar as { align?: unknown; placement?: unknown }) : undefined;
 			return {
 				pageBg: typeof json.export?.pageBg === "string" ? json.export.pageBg : undefined,
-				background: typeof json.pi1337?.background === "string" ? json.pi1337.background : undefined,
+				background: typeof extras?.background === "string" ? extras.background : undefined,
 				avatar: parseAvatar(avatar),
 				avatarAlign: avatarObj?.align === "center" ? "center" : "left",
 				// Default below the editor: a kitty-image widget placed *above* the editor
@@ -188,17 +201,6 @@ export default function pi1337(pi: ExtensionAPI) {
 	// specific cursor/row accounting and re-renders when main/fullscreen capability
 	// changes. Bytes are loaded once per path; terminals without image support use
 	// the configured ASCII fallback. Custom images are capped before reading.
-	// Cell width the avatar image scales to (mirrors pi-tui's calculateImageCellSize,
-	// which isn't re-exported), so we can center it: same min(width,height) scale, then
-	// ceil to columns. Uses the live cell pixel size pi-tui tracks from the terminal.
-	const imageColumns = (dims: ImageDimensions, maxCols = AVATAR_COLS): number => {
-		const cell = getCellDimensions();
-		const iw = Math.max(1, dims.widthPx);
-		const ih = Math.max(1, dims.heightPx);
-		const scale = Math.min((maxCols * cell.widthPx) / iw, (AVATAR_ROWS * cell.heightPx) / ih);
-		return Math.max(1, Math.ceil((iw * scale) / cell.widthPx));
-	};
-
 	const loadAvatarImage = (imagePath: string): LoadedAvatarImage | undefined => {
 		const abs = isAbsolute(imagePath) ? imagePath : themeDir ? resolvePath(themeDir, imagePath) : imagePath;
 		const cached = avatarImageCache.get(abs);
@@ -248,7 +250,9 @@ export default function pi1337(pi: ExtensionAPI) {
 				const lines = imageUsable ? image.component.render(width) : ascii?.lines;
 				if (!lines) return [];
 				const maxImageCols = Math.min(AVATAR_COLS, Math.max(1, width - 2));
-				const span = imageUsable ? imageColumns(image.dimensions, maxImageCols) : (ascii?.span ?? 0);
+				const span = imageUsable
+					? avatarImageColumns(image.dimensions, getCellDimensions(), maxImageCols, AVATAR_ROWS, imageProtocol)
+					: (ascii?.span ?? 0);
 				const pad = themeConfig.avatarAlign === "center" ? Math.max(0, Math.floor((width - span) / 2)) : 0;
 				const room = Math.max(0, width - pad);
 				const p = " ".repeat(pad);

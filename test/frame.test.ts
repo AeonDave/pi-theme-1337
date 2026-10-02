@@ -17,6 +17,14 @@ test("lastRuleIndex finds the bottom rule, leaving autocomplete below it", () =>
 	assert.equal(lastRuleIndex(raw), 2);
 });
 
+test("autocomplete labels made of rules cannot masquerade as Pi's bottom border", () => {
+	const raw = ["─".repeat(12), " input      ", "─".repeat(12), "  /init     ", `  ${"─".repeat(10)}`];
+	assert.equal(isRuleLine(raw[4]), false);
+	assert.equal(lastRuleIndex(raw), 2);
+	const out = frameEditor(raw, { boxWidth: 18, leftMargin: 0, style: ROUNDED, border: id, statusLeft: "~" });
+	assert.ok(out[4].includes("──────────"), "rule-like suggestion remains below the box");
+});
+
 test("isRuleLine recognizes the degraded '↓ N more' scroll indicator despite few dashes", () => {
 	assert.ok(isRuleLine("──── ↓ 12 more")); // < 40% dashes, but unmistakably a scroll rule
 	assert.ok(isRuleLine("─...")); // Pi truncates a scroll rule to this at editor width 4
@@ -205,15 +213,18 @@ test("frameEditor lets the spinner win row 0's gutter over the ↑ marker", () =
 	for (const line of out) assert.equal(visibleWidth(line), 20);
 });
 
-test("frameEditor keeps autocomplete rows inside the frame", () => {
+test("frameEditor places autocomplete below the box at the base editor's row", () => {
 	// boxWidth 12 → interior 10 → editor width 6.
 	const ew = 12 - 2 * GUTTER - 2;
 	assert.equal(ew, 6);
 	const raw = ["─".repeat(ew), " text ", "─".repeat(ew), "/init ", "/clear"];
 	const out = frameEditor(raw, { boxWidth: 12, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", statusLeft: "~" });
-	// 1 content + 2 autocomplete = 3 body rows, plus top, status, and bottom
-	assert.equal(out.length, 6);
-	assert.ok(out.some((l) => l.includes("/init")) && out.some((l) => l.includes("/clear")));
+	// While suggestions are open the status yields its row to the bottom border:
+	// top 0, content 1, bottom 2, first suggestion 3 (base: V + 2).
+	assert.equal(out.length, 5);
+	assert.equal(out[2], "╰──────────╯");
+	assert.ok(out[3].includes("/init") && out[4].includes("/clear"));
+	assert.ok(!out[3].includes("│") && !out[4].includes("│"), "suggestions must be outside the rails");
 	for (const line of out) assert.equal(visibleWidth(line), 12);
 });
 
