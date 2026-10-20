@@ -1,7 +1,65 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getCapabilities, getCellDimensions, renderImage, setCapabilities, setCellDimensions } from "@earendil-works/pi-tui";
-import { avatarImageColumns, parseAvatar, selectAvatar } from "../src/avatar.ts";
+import { avatarImageColumns, layoutAvatarRows, parseAvatar, selectAvatar } from "../src/avatar.ts";
+import { stripAnsi, visibleWidth } from "../src/width.ts";
+
+test("avatar text fallback ignores image width and cannot overflow after centering", () => {
+	const fallback = `[Image: ${"long-custom-filename".repeat(5)}]`.slice(0, 80);
+	const lines = layoutAvatarRows([fallback], 80, { align: "center", imageColumns: 18 });
+	assert.deepEqual(lines, [fallback]);
+	assert.equal(visibleWidth(lines[0]), 80);
+	assert.deepEqual(
+		layoutAvatarRows(["[image unavailable]"], 40, { align: "center", imageColumns: 8 }),
+		["          [image unavailable]"],
+	);
+});
+
+test("avatar ASCII preserves block alignment and clips styled wide graphemes at narrow widths", () => {
+	const art = ["  o", " /|\\", ""];
+	assert.deepEqual(layoutAvatarRows(art, 12, { align: "center" }), ["      o", "     /|\\", ""]);
+	const wide = "\x1b[32m界".repeat(20) + "\x1b[39m";
+	for (const width of [1, 2, 3, 8, 19]) {
+		for (const align of ["left", "center"] as const) {
+			const lines = layoutAvatarRows([wide, "short"], width, { align });
+			for (const line of lines) assert.ok(visibleWidth(line) <= width, `width ${width}: ${JSON.stringify(line)}`);
+			assert.ok(!stripAnsi(lines[0]).includes("\ufffd"), "clipping must not break Unicode");
+		}
+	}
+});
+
+test("avatar protocol payloads and image row reservations survive centering byte for byte", () => {
+	const caps = getCapabilities();
+	try {
+		for (const protocol of ["kitty", "iterm2"] as const) {
+			setCapabilities({ ...caps, images: protocol });
+			const image = renderImage("AA==", { widthPx: 46, heightPx: 100 }, {
+				maxWidthCells: 18,
+				maxHeightCells: 10,
+				moveCursor: false,
+			});
+			assert.ok(image, `${protocol} renderer must return a sequence`);
+			const sequence = protocol === "iterm2" ? `\x1b[${image.rows - 1}A${image.sequence}` : image.sequence;
+			const raw = protocol === "iterm2" ? ["", sequence] : [sequence, ""];
+			const pad = " ".repeat(Math.floor((41 - image.columns) / 2));
+			assert.deepEqual(
+				layoutAvatarRows(raw, 41, { align: "center", imageColumns: image.columns }),
+				raw.map((line) => line ? pad + line : ""),
+			);
+		}
+	} finally {
+		setCapabilities(caps);
+	}
+});
+
+test("avatar zero and narrow widths stay bounded without cutting image escapes", () => {
+	const sequence = "\x1b_Ga=T,f=100,c=1,r=1;AA==\x1b\\";
+	assert.deepEqual(layoutAvatarRows([sequence, ""], 1, { align: "center", imageColumns: 1 }), [sequence, ""]);
+	assert.deepEqual(layoutAvatarRows([sequence, "fallback", ""], 0, { align: "center", imageColumns: 1 }), ["", "", ""]);
+	assert.deepEqual(layoutAvatarRows(["abcdef"], 2, { align: "center", imageColumns: 18 }).map(stripAnsi), ["ab"]);
+	assert.deepEqual(layoutAvatarRows([sequence, ""], 2, { align: "center", imageColumns: 18 }), ["", ""]);
+	assert.deepEqual(layoutAvatarRows([sequence], 2, { align: "center" }), [sequence], "unknown image width must not add speculative padding");
+});
 
 test("avatar centering uses the columns actually reserved by Kitty and iTerm2", () => {
 	const caps = getCapabilities();

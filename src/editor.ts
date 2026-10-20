@@ -33,14 +33,14 @@ import {
 	stableEmojiWidth,
 	usageLevel,
 } from "./format.ts";
-import { editorWidthFor, frameEditor, GUTTER, ROUNDED } from "./frame.ts";
+import { editorWidthFor, frameEditor, GUTTER, ROUNDED, type RowCandidate } from "./frame.ts";
 import { chooseBox } from "./width.ts";
 
 export interface FramedEditorDeps {
 	ctx: ExtensionContext;
 	getPersona: () => string | undefined;
 	getSubagentCount: () => number;
-	/** Live one-line agent summary from pi-persona (names + glyphs), if any. */
+	/** Live numeric agent count published by pi-persona, if any. */
 	getAgents?: () => string | undefined;
 	/** Current git branch from Pi's footer data (null = not a repo). */
 	getGitBranch?: () => string | null | undefined;
@@ -49,6 +49,8 @@ export interface FramedEditorDeps {
 	getContextUsage: () => ContextUsageLike | undefined;
 	getCost: () => string;
 	isWorking: () => boolean;
+	/** Static prompt state; takes precedence over the animated working spinner. */
+	isWaitingForUser?: () => boolean;
 	spinnerFrame: () => string;
 	/** Hand the live TUI back so the spinner timer can request renders. */
 	bindTui: (tui: TUI) => void;
@@ -113,30 +115,39 @@ class FramedEditor extends CustomEditor {
 	}
 
 	/**
-	 * Pi 0.85 adds mouse routing to Editor. Keep this optional at compile time
-	 * because the package's compatibility range still includes 0.84, but forward
-	 * to the host implementation when present so a click that moves the cursor
-	 * cannot leave a spinner redraw on the old raw layout.
+	 * Forward mouse routing to the host implementation so a click that moves the
+	 * cursor cannot leave a spinner redraw on the old raw layout. Pi's screen-level text
+	 * selection owns press/drag/release on editor rows, so unhandled motion events
+	 * must not evict the unchanged layout cache.
 	 */
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		this.invalidateRawRenderCache();
 		const base = (CustomEditor.prototype as unknown as {
 			handleMouse?: (this: FramedEditor, value: TuiMouseEvent) => TuiMouseEventResult | undefined;
 		}).handleMouse;
 		if (!base || !event || typeof event !== "object") return undefined;
 		const mouse = event as { x?: unknown; width?: unknown };
-		if (typeof mouse.x !== "number" || typeof mouse.width !== "number") return base.call(this, event);
+		if (typeof mouse.x !== "number" || typeof mouse.width !== "number") {
+			const result = base.call(this, event);
+			if (event.type === "click" || result !== undefined) this.invalidateRawRenderCache();
+			return result;
+		}
 		const { fallback, boxWidth, leftMargin } = chooseBox(mouse.width, this.deps.maxWidth, this.deps.minMargin);
 		// render() uses the bare editor below this same inner-width threshold.
 		// Mouse must see the identical viewport or a narrow click shifts columns.
 		const editorWidth = editorWidthFor(boxWidth);
-		if (fallback || editorWidth < 4) return base.call(this, event);
+		if (fallback || editorWidth < 4) {
+			const result = base.call(this, event);
+			if (event.type === "click" || result !== undefined) this.invalidateRawRenderCache();
+			return result;
+		}
 		// The framed component is laid out at terminal width, while Editor.handleMouse
 		// expects coordinates in the reduced raw-editor viewport.
 		const frameLeft = leftMargin + 1 + GUTTER; // margin + left rail + left gutter
 		// The frame keeps both content and autocomplete at the base editor's row
 		// indices; only the horizontal viewport differs.
-		return base.call(this, { ...event, x: mouse.x - frameLeft, width: editorWidth });
+		const result = base.call(this, { ...event, x: mouse.x - frameLeft, width: editorWidth });
+		if (event.type === "click" || result !== undefined) this.invalidateRawRenderCache();
+		return result;
 	}
 
 	render(width: number): string[] {
@@ -197,8 +208,23 @@ class FramedEditor extends CustomEditor {
 		// delegate-only counter misses); fall back to the delegate count. Pure logic in format.ts.
 		const { label } = agentCount(this.deps.getAgents?.(), this.deps.getSubagentCount());
 		const agentLabel = label.trim() ? `${accent(label.trim())}  ` : "";
-		const spinner = this.deps.isWorking() ? accent(this.deps.spinnerFrame()) : "";
+		const spinner = this.deps.isWaitingForUser?.()
+			? accent("?")
+			: this.deps.isWorking()
+				? accent(this.deps.spinnerFrame())
+				: "";
 		const branch = branchLabel(this.deps.getGitBranch?.());
+		const session = branchLabel(sessionName);
+		const leftSuffix = `${branch}${session}`;
+		// If the status row gets tight, keep the repository basename rather than
+		// clipping the tail of its path into an unidentifiable ancestor prefix.
+		const cwdSegments = cwd.split("/").filter(Boolean);
+		const cwdBasename = cwdSegments[cwdSegments.length - 1];
+		const compactCwd = cwdSegments.length > 1 && cwdBasename ? `…/${cwdBasename}` : cwd;
+		const statusLeft: RowCandidate[] = leftSuffix
+			? [{ pre: dim(` ${cwd}`), flex: dim(leftSuffix) }, { pre: dim(` ${cwd}`) }]
+			: [{ pre: dim(` ${cwd}`) }];
+		if (compactCwd !== cwd) statusLeft.push({ pre: dim(` ${compactCwd}`) });
 		// Bash mode (leading `!`): the sigil flips to a gold `$` so the mode is
 		// visible at the prompt itself, not just in the output styling.
 		const bash = isBashInput(this.getText());
@@ -212,7 +238,7 @@ class FramedEditor extends CustomEditor {
 			border,
 			prompt: sigil, // first-row left gutter
 			spinner, // first-row right gutter (empty when idle)
-			statusLeft: dim(` ${cwd}${branch}${branchLabel(sessionName)}`),
+			statusLeft,
 			statusCenter: theme.fg(usageColor, `${usage}${cost ? ` · ${cost}` : ""}`), // usage (+ cost), centered
 			// The provider/model slug ("anthropic/opus-4-6") keeps the same model id
 			// unambiguous across providers (native vs openrouter etc.). As the terminal

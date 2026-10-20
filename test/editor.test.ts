@@ -4,12 +4,14 @@ import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext, KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { makeFramedEditorFactory } from "../src/editor.ts";
+import { stripAnsi } from "../src/width.ts";
 
 const identity = (text: string) => text;
 
-test("spinner renders consume cached status and never rescan the session", () => {
+test("waiting marker is static, uses the spinner gutter, and never rescans the session", () => {
 	let entryScans = 0;
 	let contextScans = 0;
+	let spinnerFrames = 0;
 	const ctx = {
 		cwd: "C:\\work\\repo",
 		model: { id: "claude-opus-4-8", provider: "claude-pro-max-native" },
@@ -50,7 +52,11 @@ test("spinner renders consume cached status and never rescan the session", () =>
 		getContextUsage: () => ({ tokens: 1000, contextWindow: 200000, percent: 0.5 }),
 		getCost: () => "$0.250",
 		isWorking: () => true,
-		spinnerFrame: () => "⠹",
+		isWaitingForUser: () => true,
+		spinnerFrame: () => {
+			spinnerFrames++;
+			return "⠹";
+		},
 		bindTui() {},
 		bindEditor() {},
 		maxWidth: 100,
@@ -62,6 +68,56 @@ test("spinner renders consume cached status and never rescan the session", () =>
 
 	assert.equal(entryScans, 0, "render must not walk a growing session");
 	assert.equal(contextScans, 0, "render must not rebuild context usage");
+	assert.equal(spinnerFrames, 0, "waiting for the user must not animate the spinner");
+	const firstBodyRow = editor.render(120)[1] ?? "";
+	assert.ok(firstBodyRow.includes("?"), "waiting marker should occupy the spinner gutter");
+	assert.ok(!firstBodyRow.includes("⠹"), "waiting marker should replace the working spinner");
+});
+
+test("status keeps the repository basename ahead of provider detail at narrow and changing widths", () => {
+	const ctx = {
+		cwd: "D:/Sources/pi-persona",
+		model: { id: "claude-opus-4-8", provider: "claude-pro-max-native" },
+		modelRegistry: { isUsingOAuth: () => false },
+		ui: { theme: { fg: (_color: string, text: string) => text } },
+	} as unknown as ExtensionContext;
+	const tui = { terminal: { rows: 40, columns: 120 }, requestRender() {} } as unknown as TUI;
+	const editorTheme = {
+		borderColor: identity,
+		selectList: {
+			text: identity,
+			selectedText: identity,
+			description: identity,
+			selectedDescription: identity,
+			scrollIndicator: identity,
+		},
+	} as unknown as EditorTheme;
+	const editor = makeFramedEditorFactory({
+		ctx,
+		getPersona: () => "1337",
+		getSubagentCount: () => 3,
+		getGitBranch: () => "feature/restore-context-indicator",
+		getSessionName: () => "Fix session resume status",
+		getContextUsage: () => ({ tokens: 182000, contextWindow: 200000, percent: 91 }),
+		getCost: () => "~$0.250",
+		isWorking: () => false,
+		spinnerFrame: () => "",
+		bindTui() {},
+		bindEditor() {},
+		maxWidth: 100,
+		minMargin: 2,
+	})(tui, editorTheme, { matches: () => false } as unknown as KeybindingsManager);
+	editor.setText("status regression");
+
+	for (const width of [40, 60, 80, 90, 120]) {
+		const rendered = editor.render(width);
+		const status = stripAnsi(rendered[rendered.length - 2] ?? "");
+		assert.ok(status.includes("pi-persona"), `workspace identity should survive at terminal width ${width}: ${status}`);
+		if (width >= 80) {
+			assert.ok(status.includes("Sources/pi-persona"), `full workspace path should survive at ${width}: ${status}`);
+			assert.ok(status.includes("91%"), `critical context percentage should survive at ${width}: ${status}`);
+		}
+	}
 });
 
 test("steady-state spinner renders reuse the base editor layout", () => {
@@ -119,6 +175,8 @@ test("steady-state spinner renders reuse the base editor layout", () => {
 			screenX: x,
 			screenY: 0,
 		}) as TuiMouseEvent;
+	const selectionEvent = (type: "drag" | "release", x: number, width: number): TuiMouseEvent =>
+		({ type, button: "left", x, y: 0, width, height: 24, screenX: x, screenY: 0 }) as TuiMouseEvent;
 	CustomEditor.prototype.render = function (width: number): string[] {
 		baseRenders++;
 		return originalRender.call(this, width);
@@ -131,6 +189,12 @@ test("steady-state spinner renders reuse the base editor layout", () => {
 	try {
 		for (let i = 0; i < 20; i++) editor.render(120);
 		assert.equal(baseRenders, 1, "spinner-only redraws should not relayout unchanged editor text");
+		assert.ok((editor.render(120)[1] ?? "").includes("⠹"), "working spinner stays visible when no user reply is pending");
+		for (const type of ["drag", "release"] as const) {
+			editor.handleMouse(selectionEvent(type, 17, 120));
+			editor.render(120);
+			assert.equal(baseRenders, 1, `${type} must preserve the cached layout when Pi leaves it unhandled`);
+		}
 		editor.setText("changed prompt");
 		editor.render(120);
 		editor.handleMouse(clickEvent(17, 120));
@@ -147,7 +211,7 @@ test("steady-state spinner renders reuse the base editor layout", () => {
 		hostMouse.handleMouse = originalMouse;
 	}
 	assert.equal(baseRenders, 7, "editor mutations and narrow fallback should trigger fresh base layouts");
-	assert.equal(mouseCalls, 5, "host mouse events must still reach the base editor");
+	assert.equal(mouseCalls, 7, "click, drag, and release events must still reach the base editor");
 	// Only x/width are translated into the raw-editor viewport. screenX/screenY
 	// stay absolute terminal coordinates for renderer hit testing.
 	assert.equal(wideMouseEvent?.x, 4, "framed x must be translated for the base editor");

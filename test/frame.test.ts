@@ -52,6 +52,66 @@ test("layoutRow truncates side segments rather than overflowing", () => {
 	assert.ok(visibleWidth(line) <= 16);
 });
 
+test("layoutRow bounds long left metadata without starving context and useful right metadata", () => {
+	const left = " ~/…/project/src · feature/" + "long-branch/".repeat(8) + " · session-name";
+	const right = [
+		{ pre: "3 agents  anthropic/opus-4-8 · Elite " },
+		{ pre: "3 agents  ", flex: "opus-4-8", post: " · Elite " },
+		{ pre: "3 agents  ", post: "Elite " },
+	];
+
+	for (const width of [80, 120]) {
+		const line = layoutRow(left, "1.2M · 94%", right, width);
+		const plain = stripAnsi(line);
+		assert.equal(visibleWidth(line), width);
+		assert.ok(plain.includes("94%"), `context percentage should survive at ${width} columns: ${plain}`);
+		assert.ok(plain.includes("Elite"), `a useful right-side label should survive at ${width} columns: ${plain}`);
+		assert.ok(plain.includes("opus-4-8"), `the model should remain identifiable at ${width} columns: ${plain}`);
+		assert.ok(plain.includes("…"), `oversized left metadata should be visibly abbreviated at ${width} columns: ${plain}`);
+	}
+});
+
+test("layoutRow lets long left metadata yield to useful right metadata when center is empty", () => {
+	const left = " ~/…/project/src · feature/" + "long-branch/".repeat(8) + " · session-name";
+	for (const width of [80, 120]) {
+		const line = layoutRow(left, "", withPersona, width);
+		const plain = stripAnsi(line);
+		assert.equal(visibleWidth(line), width);
+		assert.ok(plain.includes("Elite"), `persona should survive at ${width} columns: ${plain}`);
+		assert.ok(plain.includes("opus-4-8"), `model should remain identifiable at ${width} columns: ${plain}`);
+		assert.ok(plain.includes("…"), `oversized left metadata should be visibly abbreviated at ${width} columns: ${plain}`);
+	}
+});
+
+test("layoutRow drops an unfit center before allowing long left metadata to starve the right", () => {
+	const line = layoutRow("~/project · " + "long-branch/".repeat(8), "this center can never fit here", withPersona, 40);
+	const plain = stripAnsi(line);
+	assert.equal(visibleWidth(line), 40);
+	assert.ok(plain.includes("Elite") && plain.includes("opus-4-8"), `useful right rung should survive: ${plain}`);
+	assert.ok(plain.includes("…"), `oversized left metadata should yield: ${plain}`);
+	assert.ok(!plain.includes("this center"), `unfit center should remain optional: ${plain}`);
+});
+
+test("layoutRow preserves the workspace identity when provider detail becomes affordable", () => {
+	const left = [
+		{ pre: " …/Sources/pi-persona", flex: " · feature/restore-context-indicator · Fix session resume status" },
+		{ pre: " …/Sources/pi-persona" },
+		{ pre: " …/pi-persona" },
+	];
+	const right = [
+		{ pre: "3 agents  claude-pro-max-native/opus-4-8 · 1337 " },
+		{ pre: "3 agents  ", flex: "opus-4-8", post: " · 1337 " },
+		{ pre: "3 agents  ", post: "1337 " },
+	];
+
+	for (const width of [40, 60, 80, 90, 120]) {
+		const line = layoutRow(left, "182.0k · 91% · ~$0.250", right, width);
+		const plain = stripAnsi(line);
+		assert.equal(visibleWidth(line), width);
+		assert.ok(plain.includes("pi-persona"), `workspace identity should survive at ${width} columns: ${plain}`);
+	}
+});
+
 // The status row's right segment degrades semantically, not char-by-char: the
 // editor hands layoutRow a ladder of candidates (widest first). `flex` marks
 // the model as the only part allowed to trim with `…`; pre/post stay verbatim.
@@ -103,6 +163,13 @@ test("resolveSegment hard-truncates the last candidate when nothing fits", () =>
 	const out = resolveSegment([{ pre: "3 agents  ", post: "Elite " }], 6);
 	assert.ok(visibleWidth(out) <= 6);
 	assert.equal(resolveSegment(withPersona, 0), "");
+});
+
+test("resolveSegment keeps an ellipsis on a hard-truncated numeric label", () => {
+	const out = resolveSegment([{ pre: "1337" }], 2);
+	assert.equal(visibleWidth(out), 2);
+	assert.notEqual(out, "13", "a clipped numeric model must not read like a different model id");
+	assert.ok(stripAnsi(out).endsWith("…"), `hard truncation should be visibly marked: ${out}`);
 });
 
 test("frameEditor accepts a degradation ladder for the status right segment", () => {

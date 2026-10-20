@@ -128,8 +128,12 @@ function sweep(): { cases: number; bad: number; overflow: number; examples: stri
 			border: nul,
 			prompt: "›",
 			spinner: "⠹",
-			statusLeft: " ~/…/ctf · main",
-			statusCenter: "60.0k · 22%",
+			statusLeft: i % 2 === 0 ? " ~/…/ctf · main" : [
+				{ pre: " ~/…/project/ctf", flex: " · feature/long-session-metadata · città 日本語" },
+				{ pre: " ~/…/project/ctf" },
+				{ pre: " …/ctf" },
+			],
+			statusCenter: i % 2 === 0 ? "60.0k · 22%" : "182.0k · 91% · ~$0.250",
 			statusRight: [{ pre: "anthropic/opus-4-8 · Elite " }, { pre: "Elite " }],
 		});
 		cases++;

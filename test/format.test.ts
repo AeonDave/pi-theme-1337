@@ -123,8 +123,8 @@ test("formatCost sums assistant usage and hides a zero total", () => {
 		{ type: "compaction" }, // non-message, ignored
 		{ type: "message", message: { role: "assistant", usage: { cost: { total: 0.123 } } } },
 	];
-	assert.equal(formatCost(entries), "$0.423"); // < $1 → 3 decimals
-	assert.equal(formatCost([{ type: "message", message: { role: "assistant", usage: { cost: { total: 2.5 } } } }]), "$2.50");
+	assert.equal(formatCost(entries), "~$0.423"); // < $1 → 3 decimals; always an estimate
+	assert.equal(formatCost([{ type: "message", message: { role: "assistant", usage: { cost: { total: 2.5 } } } }]), "~$2.50");
 	assert.equal(formatCost([]), ""); // zero → omitted from the plancia
 });
 
@@ -134,13 +134,17 @@ test("formatCost matches Pi's cumulative usage across tool results and summaries
 		{ type: "compaction", usage: { cost: { total: 1.25 } } },
 		{ type: "branch_summary", usage: { cost: { total: 2.75 } } },
 	];
-	assert.equal(formatCost(entries), "$4.50");
+	assert.equal(formatCost(entries), "~$4.50");
 });
 
-test("formatCost adds leftover background-leg spend published as persona-cost", () => {
+test("formatCost includes Pi 1.3 cache-warm usage entries and labels the total as an estimate", () => {
+	const entries = [{ type: "usage", usage: { cost: { total: 0.25 } } }];
+	assert.equal(formatCost(entries), "~$0.250");
+});
+
+test("formatCost adds leftover background-leg usage published as persona-cost", () => {
 	const supervisor = [{ type: "message", message: { role: "assistant", usage: { cost: { total: 0.5 } } } }];
-	assert.equal(formatCost(supervisor, false, 0.5), "$1.00");
-	assert.equal(formatCost(supervisor, true, 0.5), ""); // subscription still hides the whole figure
+	assert.equal(formatCost(supervisor, 0.5), "~$1.00");
 });
 
 test("parsePersonaCost reads pi-persona's leftover-leg status", () => {
@@ -150,14 +154,12 @@ test("parsePersonaCost reads pi-persona's leftover-leg status", () => {
 	assert.equal(parsePersonaCost("not a cost"), 0);
 });
 
-test("formatCost hides the nominal cost entirely on an OAuth subscription", () => {
-	// On Claude Pro/Max the accumulated figure is an API-equivalent, not money
-	// spent — showing it (or a "(sub)" marker) is noise. No cost shown = sub;
-	// a visible cost = actually paying per token.
-	const paid = [{ type: "message", message: { role: "assistant", usage: { cost: { total: 2.5 } } } }];
-	assert.equal(formatCost(paid, true), "");
-	assert.equal(formatCost([], true), "");
-	assert.equal(formatCost(paid, false), "$2.50");
+test("formatCost includes mixed-provider history without treating an OAuth selection as billing proof", () => {
+	const entries = [
+		{ type: "message", message: { role: "assistant", usage: { cost: { total: 2.5 } } } },
+		{ type: "usage", provider: "anthropic", model: "claude-opus-4-8", usage: { cost: { total: 0.75 } } },
+	];
+	assert.equal(formatCost(entries), "~$3.25");
 });
 
 test("formatCost ignores malformed and negative usage instead of rendering NaN or Infinity", () => {
@@ -165,9 +167,11 @@ test("formatCost ignores malformed and negative usage instead of rendering NaN o
 		{ type: "message", message: { role: "assistant", usage: { cost: { total: Number.NaN } } } },
 		{ type: "message", message: { role: "assistant", usage: { cost: { total: Number.POSITIVE_INFINITY } } } },
 		{ type: "message", message: { role: "assistant", usage: { cost: { total: -2 } } } },
+		{ type: "message", message: { role: "assistant", usage: { cost: { total: "0.5" } } } },
+		{ type: "usage", usage: { cost: { total: null } } },
 		{ type: "message", message: { role: "assistant", usage: { cost: { total: 0.25 } } } },
 	];
-	assert.equal(formatCost(entries), "$0.250");
+	assert.equal(formatCost(entries, Number.NaN), "~$0.250");
 });
 
 test("stableEmojiWidth drops the lone VS16 so our width model matches the terminal", () => {

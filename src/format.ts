@@ -189,33 +189,34 @@ export function usageLevel(percent: number | null | undefined): UsageLevel {
 /** Structural slice of a session entry — enough to sum costs without Pi imports. */
 export interface SessionEntryLike {
 	type: string;
-	message?: { role?: string; usage?: { cost?: { total?: number } } };
-	usage?: { cost?: { total?: number } };
+	provider?: string;
+	model?: string;
+	message?: { role?: string; usage?: { cost?: { total?: unknown } } };
+	usage?: { cost?: { total?: unknown } };
 }
 
 /**
- * Cumulative session cost from assistant/tool-result messages plus compaction
- * and branch-summary usage (the same walk Pi's footer does): "$0.423" under a
- * dollar, "$2.50" above, "" when zero. On an OAuth
- * subscription the figure is a nominal API-equivalent, not money spent, so the
- * segment is hidden entirely — a visible cost therefore always means real
- * pay-per-token spend.
+ * Cumulative API-equivalent estimate from assistant/tool-result messages,
+ * compaction, branch-summary, and Pi usage entries (the same usage sources Pi's
+ * footer sums), plus pending persona usage. It is not an invoice: session history
+ * does not establish actual billing across providers, subscriptions, or model
+ * changes. Prefix nonzero values with `~` to keep that distinction visible.
  */
-export function formatCost(entries: Iterable<SessionEntryLike>, usingSubscription = false, extraCost = 0): string {
-	if (usingSubscription) return "";
+export function formatCost(entries: Iterable<SessionEntryLike>, extraCost = 0): string {
 	let total = 0;
 	for (const entry of entries) {
 		const messageUsage =
 			entry.type === "message" && (entry.message?.role === "assistant" || entry.message?.role === "toolResult")
 				? entry.message.usage
 				: undefined;
-		const summaryUsage = entry.type === "compaction" || entry.type === "branch_summary" ? entry.usage : undefined;
+		const summaryUsage =
+			entry.type === "compaction" || entry.type === "branch_summary" || entry.type === "usage" ? entry.usage : undefined;
 		const value = (messageUsage ?? summaryUsage)?.cost?.total;
 		if (typeof value === "number" && Number.isFinite(value) && value > 0) total += value;
 	}
 	if (typeof extraCost === "number" && Number.isFinite(extraCost) && extraCost > 0) total += extraCost;
-	if (total <= 0) return "";
-	return `$${total < 1 ? total.toFixed(3) : total.toFixed(2)}`;
+	if (total <= 0 || !Number.isFinite(total)) return "";
+	return `~$${total < 1 ? total.toFixed(3) : total.toFixed(2)}`;
 }
 
 /**

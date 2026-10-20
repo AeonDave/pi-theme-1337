@@ -79,8 +79,8 @@ test("each theme's name matches its filename", () => {
 	}
 });
 
-test("all palettes satisfy Pi 1.0's published top-level theme schema", () => {
-	const schemaPath = join(import.meta.dirname, "..", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "modes", "interactive", "theme", "theme-schema.json");
+test("all palettes satisfy Pi 1.3's published top-level theme schema", () => {
+	const schemaPath = join(import.meta.dirname, "..", "node_modules", "@earendil-works", "pi-coding-agent", "schemas", "theme.schema.json");
 	const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as { additionalProperties: boolean; properties: Record<string, unknown> };
 	assert.equal(schema.additionalProperties, false, "keep the test pinned to the published strict contract");
 	for (const [file] of themes) {
@@ -111,6 +111,11 @@ for (const [file, theme] of themes) {
 			assert.ok(typeof value === "string" && value in vars, `${file} token ${key}: "${value}" is not a literal or known var`);
 			assert.ok(isColorLiteral(vars[value]), `${file} var ${value} → "${vars[value]}" is not a valid color`);
 		}
+	});
+
+	test(`${file}: unchanged diff text stays readable on successful tool output`, () => {
+		const ratio = contrastRatio(resolveColor(theme, "toolDiffContext"), resolveColor(theme, "toolSuccessBg"));
+		assert.ok(ratio >= 4.5, `${file}: diff context on toolSuccessBg is only ${ratio.toFixed(2)}:1`);
 	});
 }
 

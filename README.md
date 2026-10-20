@@ -18,21 +18,26 @@ unbroken outline; the chrome lives *inside* it:
 
 - **first row, left gutter** `›` — the prompt sigil; it flips to a gold `$`
   while the buffer starts Pi's bash mode (a leading `!`); **first row, right
-  gutter** — the phosphor working spinner (the only motion);
+  gutter** — the phosphor working spinner (the only motion), or a static `?`
+  while Pi waits for your answer to an extension dialog;
 - **status row** (just above the bottom edge) — the workspace **with the git
   branch and session name** (left, each omitted when absent), the token usage +
-  cumulative **cost** (center: used · % · $ — supervisor session plus sub-agent
-  spend, including leftover background-leg cost from pi-persona's `persona-cost`
+  cumulative **cost estimate** (center: used · % · ~$ — supervisor session plus sub-agent
+  usage, including leftover background-leg cost from pi-persona's `persona-cost`
   status; the color escalates to warning above 70% and error above 90%,
-  auto-compact territory; on an OAuth
-  subscription the nominal cost is hidden, so a visible cost always means real
-  pay-per-token spend), and the live sub-agent count + the **provider/model
+  auto-compact territory). `~$` is an API-equivalent estimate, **not an invoice**:
+  it includes subscription usage and stays visible across model/provider changes.
+  Pi's separate usage entries, compaction, and branch-summary usage are included.
+  The right side shows the live sub-agent count + the **provider/model
   slug** (`anthropic/opus-4-6` — never confuse a native model with the same id
   routed elsewhere) + active **persona** (right).
 
 On a narrow terminal the status row **degrades gracefully** instead of clipping:
-the centered usage drops first, then the provider prefix hides, then the model
-id trims with `…`, and at the tightest widths only the workspace path (left)
+branch/session details yield first, followed by path ancestors; the repository
+name stays identifiable before optional provider detail returns. `…` marks
+truncation. When space is still too tight, the centered
+usage drops, the provider prefix hides, then the model id trims with `…`;
+at the tightest widths only the workspace path (left)
 and the persona (right) remain — or, with no persona active, the model keeps
 trimming. The frame never overflows or misaligns at any width.
 
@@ -59,14 +64,15 @@ green-screen terminal rather than a dark theme with an accent:
 | `1337-skynet` | Terminator red-on-black — glowing-red body, alarm-red accent | pure-red errors, amber-orange diff-adds |
 
 Every palette is tuned so **dim text clears WCAG AA** (≥ 4.5:1 on the terminal,
-panel, and selected-row backgrounds), and the nine syntax roles spread across distinct luminance steps
+panel, and selected-row backgrounds); unchanged diff text also clears 4.5:1 on
+successful tool output. The nine syntax roles spread across distinct luminance steps
 (`keyword` ≠ `type`, numbers in gold), so code has internal contrast without
 leaving the monochrome world. The siblings are contract-identical — same
 51 tokens — so switching themes never breaks the frame.
 
 ### Theme-driven extras (`.pi1337` sidecar)
 
-Pi 1.0's published theme schema allows only color/theme fields at the JSON
+Pi's published theme schema allows only color/theme fields at the JSON
 root. Keep extra configuration next to the palette instead: for
 `themes/1337-fallout.json`, use `themes/1337-fallout.pi1337` (JSON content,
 non-`.json` extension so Pi does not discover it as another theme):
@@ -86,21 +92,27 @@ non-`.json` extension so Pi does not discover it as another theme):
 The sidecar travels with its theme, and image paths remain relative to the
 **theme file's directory**. Older custom themes with a root `pi1337` block
 continue to work when no sidecar is present, but their editor may flag that
-legacy key under Pi 1.0's strict published schema. Switching themes in
+legacy key under Pi's current strict published schema. Switching themes in
 `/settings` reloads the matching sidecar; after editing a sidecar in place, use
 `/reload` (Pi does not emit a theme-change event for sidecar edits).
 
 The avatar is a widget below the editor by default that swaps frame with the **task state**:
 `idle` (startup / at rest) → `working` (model generating) → `confused` (context
-compaction) → `error` (a tool failed this turn, shown until your next message).
+compaction) → `error` (a tool or compaction failed, shown once work settles).
+During an agent run the spinner stays active through automatic retries and continuations, stopping
+only when Pi emits `agent_settled`. Blocking dialogs pause it and show `?`;
+cancelled or failed compactions cannot leave the avatar stuck in `confused`.
 Every state is optional and falls back toward `idle` (`working`→`idle`,
 `confused`→`working`→`idle`, `error`→`idle`), so one frame is enough; a bare
 value (`"avatar": "x.png"`) pins the same frame everywhere.
 
-Each frame is a **PNG** (drawn via the terminal's image protocol — kitty,
+Each frame is an **image** (PNG recommended, drawn via the terminal's image protocol — kitty,
 Ghostty, WezTerm, iTerm2) or **ASCII** (`"idle": ["line", …]`, a fallback where
 images aren't supported — GNOME Terminal, tmux, VS Code, Alacritty — or hidden if
-none). Image paths are absolute or relative to the theme file. Add `"align":
+none). JPEG/GIF/WebP paths are also accepted, but may need host transcoding
+for Kitty. If Pi's image renderer itself returns a text fallback, that text is
+measured and clipped before centering, so it cannot overflow the terminal.
+Image paths are absolute or relative to the theme file. Add `"align":
 "center"` to the avatar object to center it over the terminal width (default
 left), and `"placement": "aboveEditor"` to move it above the input (default
 `belowEditor`). It sits **below** the editor by default because a kitty-image
@@ -147,7 +159,7 @@ The frame reads the `persona` status published by **pi-persona** — so when you
 switch supervisor persona (`f8` / `/persona`), its label appears on the status
 row next to the model, with **no extra wiring**. The live sub-agent count on the
 status row prefers pi-persona's published `persona-agents` status when present
-(its own running-agent summary, which also covers strategy/council cores), and
+(its numeric running-agent count, which also covers strategy/council cores), and
 otherwise falls back to a live count derived from pi-persona's `delegate` tool.
 Neither extension requires the other; if no persona is active, that slot is simply omitted.
 
@@ -184,7 +196,7 @@ extension (see [Pi themes](https://pi.dev/docs/latest/themes) and the
 | Concern | Mechanism |
 |---------|-----------|
 | Phosphor palettes | `themes/*.json` (all eight registered via `pi.themes`), applied with `ctx.ui.setTheme(...)` — the default resolved from `PI_1337_THEME` |
-| Framed, centered editor | `ctx.ui.setEditorComponent` → a `CustomEditor` subclass that renders the real editor at a reduced width, then wraps it in a rounded panel with margins; spinner-only redraws reuse the base editor layout until input, mouse, resize, or autocomplete changes it |
+| Framed, centered editor | `ctx.ui.setEditorComponent` → a `CustomEditor` subclass that renders the real editor at a reduced width, then wraps it in a rounded panel with margins; spinner-only redraws and unhandled mouse drags reuse the base editor layout until editing, a handled mouse event, resize, or autocomplete changes it |
 | Status on the frame | lifecycle events snapshot `ctx.getContextUsage()` plus session name/cost outside the render path; the editor combines those snapshots with `ctx.cwd`, `ctx.model`, the live subagent count, `footerData.getGitBranch()` (re-rendered via `onBranchChange`), and the published persona status. All foreign inline labels are terminal-control/bidi sanitized before framing. |
 | Clean-copy shortcut | `ctx.ui` `registerShortcut` + `copyToClipboard(editor.getText())` — copies the logical buffer, bypassing the rendered frame glyphs |
 | Hide the footer & spinner row | `ctx.ui.setFooter(() => emptyComponent)` + `ctx.ui.setWorkingVisible(false)` — activity moves into the frame spinner |
@@ -203,7 +215,7 @@ modes it is a no-op.
 ## Development
 
 ```bash
-npm install
+npm install --ignore-scripts
 npm run typecheck
 npm test          # render, lifecycle-contract, palette, and Pi-component tests
 ```
@@ -218,9 +230,11 @@ running (`width.ts` keeps a mirror only as the fallback the tests use).
 `npm run test:parity` proves it end to end; point `PI_TUI` at your installed
 bundle. See [AGENTS.md](AGENTS.md).
 
-Development and runtime compatibility are verified against Pi `0.84.2` and
-Node `>=22.19.0`. The Pi core peer ranges remain `"*"`, as required by Pi's
-package contract; the development dependencies pin the exact tested runtime.
+Targets **Pi >=1.3.0** and **Node >=22.19.0**. The Pi core peer ranges remain
+`"*"`, as required by Pi's package contract; development dependencies pin Pi
+`1.3.0`. Tests cover lifecycle state, long status labels, mouse-cache reuse,
+cost accounting, image fallbacks, and palette contrast. The separate parity
+sweep checks the frame against the installed host renderer.
 
 ## License
 

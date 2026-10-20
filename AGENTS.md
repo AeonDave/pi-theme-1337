@@ -100,9 +100,9 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
 - **Render-only presentation with transparent cache invalidation.** `FramedEditor`
   extends `CustomEditor` and caches the base editor's raw layout across
   spinner-only redraws; its `invalidate`/input/text/padding overrides only drop
-  that cache and forward to the base class. On Pi 0.85+'s optional mouse API it
-  forwards `handleMouse` the same way, retaining compatibility with 0.84 while
-  invalidating cursor changes. Editing, autocomplete, history, and keybindings
+  that cache and forward to the base class. On Pi 1.3 it forwards `handleMouse`,
+  invalidating cursor/handled changes but not unhandled press/drag/release events
+  owned by terminal text selection. Editing, autocomplete, history, and keybindings
   stay the base class's. Never swallow input. (The clean-copy feature stays out
   of the editor: it's a top-level `registerShortcut` reading `getText()`, not a
   key intercept.)
@@ -119,12 +119,13 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   reacts to bash mode (`isBashInput` — a leading `!` flips `›` to a
   `bashMode`-colored `$`); the usage color escalates with `usageLevel`
   (>70% warning, >90% error — the footer's thresholds); the model renders as a
-  `provider/id` slug; the cost is hidden when `isUsingOAuth` (a subscription's
-  figure is a nominal API-equivalent — a visible cost must always mean real
-  spend); the branch comes from `footerData.getGitBranch()` with an
+  `provider/id` slug; the cost is always an API-equivalent **estimate**, marked
+  `~$`, never an assertion of actual billing. Sum message, compaction,
+  branch-summary and Pi `usage` entries plus pending persona usage; the current
+  model's OAuth state cannot classify historical or child billing. The branch comes from `footerData.getGitBranch()` with an
   `onBranchChange` subscription (unsubscribed in `clear()`) so switches repaint
   promptly. Session name/context/cost are refreshed on session/model/turn events,
-  never by the 90ms render path; OAuth skips the cost walk entirely. All dynamic
+  never by the 90ms render path. All dynamic
   inline labels pass through the bounded linear terminal-control/bidi sanitizer
   before they enter the frame. Pi's two rules are dropped when the box is rebuilt, but they double
   as its scroll indicators — `scrollMarker` re-hangs `↑`/`↓` in the first/last
@@ -132,8 +133,9 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   above or below the visible rows stays visible.
 - **The status row narrows semantically, never char-by-char.** The right
   segment is a `RowCandidate[]` degradation ladder resolved by
-  `resolveSegment` (frame.ts, pure): the centered usage drops first
-  (layoutRow's gap rule), then provider hidden → model trimmed with `…`
+  `resolveSegment` (frame.ts, pure): long workspace/branch/session metadata yields
+  space to the center and the narrowest useful right rung. When they cannot fit,
+  the centered usage drops, then provider hidden → model trimmed with `…`
   (only the `flex` part trims; floor `MIN_FLEX`, the last rung trims below
   it) → persona alone when present, otherwise the model keeps trimming.
   Blind right-truncation was the old behavior — don't reintroduce it; the
@@ -154,9 +156,14 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   `apply()` also forces one full redraw to repair diagnostics emitted just before
   the guard bound; `clear()` disables the guard before dropping the TUI handle.
 - **One source of motion.** The row-0 braille spinner — a single `startSpinner`
-  helper (`90ms` timer) driven by `agent_start`/`agent_end`, gated on `chromeActive`
-  (so non-tui modes never start it) and re-derived in `apply()` so toggling on
-  mid-turn revives motion; cleared on `agent_end`/shutdown.
+  helper (`90ms` timer) driven by `agent_start`/`agent_settled`, gated on `chromeActive`
+  (so non-tui modes never start it). `agent_end` is not settlement: retries,
+  compaction and queued work can follow. Track prompts/compaction even while
+  toggled off so `apply()` restores their state. Blocking `ui_prompt_start` pauses
+  the timer and displays a static `?`; `ui_prompt_end` resumes only an active run.
+  Manual compaction animates without inventing an agent run. Both
+  `session_compact` and `session_compact_failed` clear compaction state; an abort
+  is not an error. Clear the timer on settlement/disable/shutdown.
 - **Always reversible.** Everything `apply()` changes, `clear()` restores:
   `setEditorComponent(undefined)`, `setFooter(undefined)`, `setWorkingVisible(true)`,
   `setHiddenThinkingLabel()`, `setTheme(previous)` (only while the live theme is
@@ -176,7 +183,7 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   (`setWidget("pi1337-avatar", …, {placement:"belowEditor"})` by default) whose frames come
   from the pure `avatar.ts` (`parseAvatar`/`selectAvatar`), swapped on a small
   task-state machine (`avatarState`: idle → working on `agent_start`, confused on
-  `session_before_compact`, error at `agent_end` when a tool's `isError` fired
+  `session_before_compact`, error at `agent_settled` when a tool's `isError` fired
   that turn, else idle) and removed in `clear()` (`setWidget(key, undefined)`).
   It defaults to `belowEditor` (`pi1337.avatar.placement`): a kitty-image widget
   placed *above* the editor corrupts the input box's differential redraw beneath
@@ -197,8 +204,10 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   One widget factory lays the block out at the live render width: ASCII rows are
   clipped to the room the centering pad leaves (a widget row wider than the
   terminal wraps, and a wrapped row desynchronizes the renderer exactly like an
-  over-wide frame row), while an image row is a single escape sequence drawn at
-  the cursor column and is padded but never clipped.
+  over-wide frame row). Only actual Kitty/iTerm2 payloads use image-cell geometry
+  and bypass text clipping; Image.render can return text even when a protocol is
+  available. Measure/clip those fallbacks as text, never truncate protocol bytes.
+  `layoutAvatarRows` in the pure avatar module owns this distinction.
   index.ts owns the image runtime imports (allowed alongside editor.ts); avatar.ts
   stays pure (parsing plus protocol-aware image-cell geometry). Kitty may reserve
   one fewer column than iTerm2 for a height-limited PNG; match pi-tui's size
@@ -206,7 +215,7 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   Tint and avatar are read from a JSON sidecar named after the active theme
   (`1337-fallout.json` → `1337-fallout.pi1337`) via `ctx.ui.theme.sourcePath`.
   The non-`.json` extension prevents Pi's theme discovery from loading the
-  sidecar as a palette, and keeps the theme JSON valid against Pi 1.0's strict
+  sidecar as a palette, and keeps the theme JSON valid against Pi 1.3's strict
   published schema. A legacy root `pi1337` block remains a fallback only when
   no sidecar exists. Read in `apply()` into `themeConfig` +
   `themeDir`, and re-read on a live `/settings` switch: Pi fires no theme event, so
@@ -228,8 +237,8 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   terminal selection grabs rendered cells (`│`, padding, per-row newlines) and
   cannot be fixed at the app layer; this is the clean escape hatch.
 - **TUI-only side effects.** Guard with `ctx.hasUI` then `ctx.mode === "tui"`
-  before the editor/footer/working row. The theme switch is fine outside
-  tui; the chrome is not.
+  before all presentation changes, including the theme switch as well as the
+  editor/footer/working row. RPC/JSON/print must not acquire chrome or timers.
 - **Persona coupling is read-only.** The persona label comes from
   `footerData.getExtensionStatuses().get("persona")`, and the agent count prefers
   `…get("persona-agents")` (falling back to the delegate-derived count). Leftover
@@ -241,7 +250,11 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   `theme.test.ts` enforces the set + valid color resolution for every palette,
   checks each file's `name` matches its filename, and applies the green
   monochrome rule (amber family the only exception) to the default `1337.json`
-  only — the amber/ice/split siblings are intentionally other-hued.
+  only — the amber/ice/split siblings are intentionally other-hued. Also enforce
+  `toolDiffContext` contrast ≥4.5:1 on `toolSuccessBg`, not only `dim` contrast.
+- **Current host.** Target Pi ≥1.3.0; keep both Pi development packages pinned
+  together and host-provided packages as wildcard peers. Tests locate the theme
+  schema at the release's published `schemas/theme.schema.json`.
 
 ## Verify
 

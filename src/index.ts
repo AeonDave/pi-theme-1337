@@ -32,14 +32,14 @@ import {
 	visibleWidth as piVisibleWidth,
 } from "@earendil-works/pi-tui";
 import type { KeyId } from "@earendil-works/pi-tui";
-import { avatarImageColumns, type AvatarFrames, type AvatarState, parseAvatar, selectAvatar } from "./avatar.ts";
+import { avatarImageColumns, layoutAvatarRows, type AvatarFrames, type AvatarState, parseAvatar, selectAvatar } from "./avatar.ts";
 import { OSC11_RESET, osc11Set, resolveBackground, resolveBackgroundHex } from "./background.ts";
 import { autoThemeEnabled, backgroundEnv, chooseStartupTheme, copyShortcut, hiddenThinkingLabel, isDisabled, resetConfigCache } from "./config.ts";
 import { makeFramedEditorFactory } from "./editor.ts";
 import { formatCost, parsePersonaCost, type ContextUsageLike } from "./format.ts";
 import { forceFullRedraw, installOutOfBandRedrawGuard, type RedrawWritable } from "./redraw-guard.ts";
 import { countSubagentsFromInput, countSubagentsFromResult } from "./subagents.ts";
-import { truncateToWidth, useTerminalMetrics, visibleWidth } from "./width.ts";
+import { useTerminalMetrics } from "./width.ts";
 
 // Measure with the renderer's own ruler, never a copy of it. A row measured one
 // column short pads past the terminal edge, wraps, and desynchronizes pi's
@@ -75,12 +75,11 @@ interface LoadedAvatarImage {
 
 interface RenderedAvatarAscii {
 	lines: string[];
-	span: number;
 }
 
 const PERSONA_STATUS_KEY = "persona"; // published by pi-persona
-const AGENTS_STATUS_KEY = "persona-agents"; // live agent summary published by pi-persona
-const COST_STATUS_KEY = "persona-cost"; // leftover background-leg $ published by pi-persona
+const AGENTS_STATUS_KEY = "persona-agents"; // live numeric agent count published by pi-persona
+const COST_STATUS_KEY = "persona-cost"; // pending background-leg cost estimate published by pi-persona
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MAX_WIDTH = 100;
 const MIN_MARGIN = 2;
@@ -95,6 +94,9 @@ export default function pi1337(pi: ExtensionAPI) {
 
 	let enabled = true;
 	let working = false;
+	let runActive = false;
+	let waitingForUser = false;
+	let compacting = false;
 	let spin = 0;
 	let timer: ReturnType<typeof setInterval> | undefined;
 	let activeTui: TUI | undefined;
@@ -116,7 +118,7 @@ export default function pi1337(pi: ExtensionAPI) {
 	let themeRefreshContext: ExtensionContext | undefined;
 	let avatarShown = false; // whether the avatar widget is currently installed
 	let avatarState: AvatarState = "idle"; // task-lifecycle state the avatar reflects
-	let turnErrored = false; // a tool errored during the current turn → show the error frame at agent_end
+	let turnErrored = false; // a tool/compaction errored → show the error frame when the run settles
 	const avatarImageCache = new Map<string, LoadedAvatarImage | null>(); // resolved path → decoded component (null = unrenderable)
 	let cachedSessionName: string | undefined;
 	let cachedContextUsage: ContextUsageLike | undefined;
@@ -226,13 +228,9 @@ export default function pi1337(pi: ExtensionAPI) {
 		return result ?? undefined;
 	};
 
-	// Lay the avatar block out at the live render width. `span` is its cell width
-	// (image columns, or the widest ASCII line); centering pads by the leftover.
-	// ASCII lines are clipped to the room that leaves — a widget line wider than the
-	// terminal wraps, and a wrapped row throws pi's differential renderer off by a
-	// row, which is exactly how stale chrome survives a repaint. An image line is a
-	// single escape sequence drawn at the cursor column (blank rows are pi's
-	// reservation), so it is padded but never clipped.
+	// Pi's Image can return either a protocol payload or a textual fallback.
+	// Center actual images by their reserved cell width, but measure/clip fallback
+	// text just like ASCII; never truncate an image escape sequence in half.
 	const avatarWidget = (image: LoadedAvatarImage | undefined, ascii: RenderedAvatarAscii | undefined) => () => {
 		let imageProtocol: ImageProtocol | undefined;
 		return {
@@ -250,13 +248,10 @@ export default function pi1337(pi: ExtensionAPI) {
 				const lines = imageUsable ? image.component.render(width) : ascii?.lines;
 				if (!lines) return [];
 				const maxImageCols = Math.min(AVATAR_COLS, Math.max(1, width - 2));
-				const span = imageUsable
+				const imageColumns = imageUsable
 					? avatarImageColumns(image.dimensions, getCellDimensions(), maxImageCols, AVATAR_ROWS, imageProtocol)
-					: (ascii?.span ?? 0);
-				const pad = themeConfig.avatarAlign === "center" ? Math.max(0, Math.floor((width - span) / 2)) : 0;
-				const room = Math.max(0, width - pad);
-				const p = " ".repeat(pad);
-				return lines.map((line) => (line ? p + (imageUsable ? line : truncateToWidth(line, room, "")) : line));
+					: undefined;
+				return layoutAvatarRows(lines, width, { align: themeConfig.avatarAlign, imageColumns });
 			},
 		};
 	};
@@ -271,7 +266,6 @@ export default function pi1337(pi: ExtensionAPI) {
 			if (source.lines) {
 				ascii = {
 					lines: source.lines.map((l) => ctx.ui.theme.fg("accent", l)),
-					span: Math.max(...source.lines.map((l) => visibleWidth(l)), 0),
 				};
 			}
 		}
@@ -355,9 +349,8 @@ export default function pi1337(pi: ExtensionAPI) {
 	const refreshSessionStats = (ctx: ExtensionContext): void => {
 		cachedSessionName = ctx.sessionManager.getSessionName();
 		cachedContextUsage = ctx.getContextUsage();
-		const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
 		const extraCost = parsePersonaCost(footerData?.getExtensionStatuses().get(COST_STATUS_KEY));
-		cachedCost = formatCost(ctx.sessionManager.getEntries(), usingSubscription, extraCost);
+		cachedCost = formatCost(ctx.sessionManager.getEntries(), extraCost);
 	};
 
 	// Third-party diagnostics occasionally bypass Pi's UI and write directly to
@@ -384,6 +377,20 @@ export default function pi1337(pi: ExtensionAPI) {
 			spin = (spin + 1) % SPINNER.length;
 			requestRender();
 		}, 90);
+	};
+
+	// Pi may retry, compact, or continue after agent_end. Only agent_settled ends
+	// the run. Prompts pause animation without losing the underlying activity;
+	// manual compaction can also be active while there is no agent run at all.
+	const syncActivity = (ctx: ExtensionContext): void => {
+		if (!enabled || !chromeActive) return;
+		working = (runActive || compacting) && !waitingForUser;
+		if (working) {
+			if (!timer) startSpinner();
+		} else stopSpinner();
+		avatarState = compacting ? "confused" : waitingForUser ? "idle" : working ? "working" : turnErrored ? "error" : "idle";
+		updateAvatar(ctx);
+		requestRender();
 	};
 
 	function applyTheme(ctx: ExtensionContext): void {
@@ -427,9 +434,8 @@ export default function pi1337(pi: ExtensionAPI) {
 	}
 
 	function apply(ctx: ExtensionContext): void {
-		if (!ctx.hasUI) return;
+		if (!ctx.hasUI || ctx.mode !== "tui") return;
 		applyTheme(ctx);
-		if (ctx.mode !== "tui") return;
 
 		// Read the palette's pi-1337 config now that the (possibly switched) theme is live.
 		refreshThemeConfig(ctx, true);
@@ -460,14 +466,15 @@ export default function pi1337(pi: ExtensionAPI) {
 				ctx,
 				getPersona: () => footerData?.getExtensionStatuses().get(PERSONA_STATUS_KEY) || undefined,
 				getSubagentCount: activeSubagentCount,
-				// pi-persona publishes a live one-line summary of its agents (cores + legs by
-				// name) — prefer it over the bare delegate count when present.
+				// pi-persona's numeric count covers strategy/council cores as well as
+				// delegates — prefer it over the delegate-only fallback when present.
 				getAgents: () => footerData?.getExtensionStatuses().get(AGENTS_STATUS_KEY) || undefined,
 				getGitBranch: () => footerData?.getGitBranch(),
 				getSessionName: () => cachedSessionName,
 				getContextUsage: () => cachedContextUsage,
 				getCost: () => cachedCost,
 				isWorking: () => working,
+				isWaitingForUser: () => waitingForUser,
 				spinnerFrame: () => SPINNER[spin],
 				bindTui: (tui) => {
 					activeTui = tui;
@@ -484,14 +491,7 @@ export default function pi1337(pi: ExtensionAPI) {
 		chromeActive = true;
 		startOutOfBandRedrawGuard();
 		paintBackground(); // covers a re-enable where the footer factory already ran (activeTui bound)
-		// Toggled on mid-turn? Show live motion at once instead of waiting for the next agent_start.
-		if (!ctx.isIdle()) {
-			working = true;
-			startSpinner();
-			requestRender();
-		}
-		avatarState = ctx.isIdle() ? "idle" : "working";
-		updateAvatar(ctx); // show the current-state avatar frame if the theme ships one
+		syncActivity(ctx); // restore the current run/prompt/compaction state on toggle-on
 		// Also repairs any raw startup diagnostic emitted before the guard was bound.
 		requestFullRender();
 	}
@@ -529,46 +529,60 @@ export default function pi1337(pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		runActive = !ctx.isIdle();
+		waitingForUser = false;
+		compacting = false;
 		if (enabled) apply(ctx);
 	});
 
 	pi.on("agent_start", (_event, ctx) => {
-		if (!enabled || !chromeActive) return; // no frame → no spinner (also skips non-tui modes)
-		refreshSessionStats(ctx); // capture the newly appended user turn once, before the 90ms render path
-		working = true;
+		runActive = true;
 		turnErrored = false; // fresh turn: clear any lingering error frame
-		avatarState = "working";
-		startSpinner();
-		updateAvatar(ctx); // swap to the working frame
-		requestRender();
+		if (enabled && chromeActive) refreshSessionStats(ctx);
+		syncActivity(ctx);
 	});
 
 	pi.on("agent_end", (_event, ctx) => {
 		if (!enabled || !chromeActive) return;
-		working = false;
+		refreshSessionStats(ctx);
+		syncActivity(ctx);
+	});
+
+	pi.on("agent_settled", (_event, ctx) => {
+		runActive = false;
+		compacting = false;
 		activeSubagentCalls.clear();
-		stopSpinner();
-		// End on the error frame if a tool failed this turn, else settle back to idle.
-		avatarState = turnErrored ? "error" : "idle";
-		updateAvatar(ctx);
-		requestRender();
+		if (enabled && chromeActive) refreshSessionStats(ctx);
+		syncActivity(ctx);
+	});
+
+	pi.on("ui_prompt_start", (_event, ctx) => {
+		waitingForUser = true;
+		syncActivity(ctx);
+	});
+
+	pi.on("ui_prompt_end", (_event, ctx) => {
+		waitingForUser = false;
+		syncActivity(ctx);
 	});
 
 	// Context compaction reads as the model "thinking hard" — show the confused frame
 	// for its duration, then return to the working frame the turn resumes in.
 	pi.on("session_before_compact", (_event, ctx) => {
-		if (!enabled || !chromeActive) return;
-		avatarState = "confused";
-		updateAvatar(ctx);
-		requestRender();
+		compacting = true;
+		syncActivity(ctx);
 	});
 
 	pi.on("session_compact", (_event, ctx) => {
-		if (!enabled || !chromeActive) return;
-		refreshSessionStats(ctx);
-		avatarState = ctx.isIdle() ? "idle" : "working";
-		updateAvatar(ctx);
-		requestRender();
+		compacting = false;
+		if (enabled && chromeActive) refreshSessionStats(ctx);
+		syncActivity(ctx);
+	});
+
+	pi.on("session_compact_failed", (event, ctx) => {
+		compacting = false;
+		if (!event.aborted) turnErrored = true;
+		syncActivity(ctx);
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
@@ -614,13 +628,16 @@ export default function pi1337(pi: ExtensionAPI) {
 
 	pi.on("tool_execution_end", (event) => {
 		if (!enabled) return;
-		if (event.isError) turnErrored = true; // remembered until agent_end shows the error frame
+		if (event.isError) turnErrored = true; // remembered until agent_settled shows the error frame
 		if (event.toolName !== "delegate") return;
 		activeSubagentCalls.delete(event.toolCallId);
 		requestRender();
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		runActive = false;
+		waitingForUser = false;
+		compacting = false;
 		clear(ctx);
 	});
 
