@@ -19,8 +19,11 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
-import { copyToClipboard, type ExtensionAPI, type ExtensionContext, type ReadonlyFooterDataProvider } from "@earendil-works/pi-coding-agent";
+import { copyToClipboard, getLanguageFromPath, highlightCode, keyHint, type ExtensionAPI, type ExtensionContext, type ReadonlyFooterDataProvider } from "@earendil-works/pi-coding-agent";
 import {
+	Box,
+	Container,
+	Text,
 	getCapabilities,
 	getCellDimensions,
 	getImageDimensions,
@@ -34,12 +37,15 @@ import {
 import type { KeyId } from "@earendil-works/pi-tui";
 import { avatarImageColumns, layoutAvatarRows, type AvatarFrames, type AvatarState, parseAvatar, selectAvatar } from "./avatar.ts";
 import { OSC11_RESET, osc11Set, resolveBackground, resolveBackgroundHex } from "./background.ts";
-import { autoThemeEnabled, backgroundEnv, chooseStartupTheme, copyShortcut, hiddenThinkingLabel, isDisabled, resetConfigCache } from "./config.ts";
+import { autoThemeEnabled, backgroundEnv, chooseStartupTheme, copyShortcut, hiddenThinkingLabel, isDisabled, polishEnabled, resetConfigCache } from "./config.ts";
 import { makeFramedEditorFactory } from "./editor.ts";
 import { formatCost, parsePersonaCost, type ContextUsageLike } from "./format.ts";
 import { forceFullRedraw, installOutOfBandRedrawGuard, type RedrawWritable } from "./redraw-guard.ts";
 import { countSubagentsFromInput, countSubagentsFromResult } from "./subagents.ts";
+import { DEFAULT_SPINNER, parseSpinner, spinnerFrame, type SpinnerProfile } from "./spinner.ts";
 import { useTerminalMetrics } from "./width.ts";
+import { createToolView, isPolishedTool } from "./tool-view.ts";
+import { createSwitchableToolView } from "./tool-adapter.ts";
 
 // Measure with the renderer's own ruler, never a copy of it. A row measured one
 // column short pads past the terminal edge, wraps, and desynchronizes pi's
@@ -66,6 +72,7 @@ interface ThemeConfig {
 	avatar?: AvatarFrames; // pi1337.avatar — parsed frames (PNG or ASCII)
 	avatarAlign?: "left" | "center"; // pi1337.avatar.align — horizontal placement of the avatar widget
 	avatarPlacement?: "aboveEditor" | "belowEditor"; // pi1337.avatar.placement — which side of the editor
+	spinner?: SpinnerProfile;
 }
 
 interface LoadedAvatarImage {
@@ -80,7 +87,6 @@ interface RenderedAvatarAscii {
 const PERSONA_STATUS_KEY = "persona"; // published by pi-persona
 const AGENTS_STATUS_KEY = "persona-agents"; // live numeric agent count published by pi-persona
 const COST_STATUS_KEY = "persona-cost"; // pending background-leg cost estimate published by pi-persona
-const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MAX_WIDTH = 100;
 const MIN_MARGIN = 2;
 
@@ -124,6 +130,33 @@ export default function pi1337(pi: ExtensionAPI) {
 	let cachedContextUsage: ContextUsageLike | undefined;
 	let cachedCost = "";
 
+	// Pi keeps a row's renderer descriptor for its entire lifetime. Install a
+	// stable adapter once, including for history drawn before session_start;
+	// changing only the resolver on toggle would leave existing rows unchanged.
+	if (polishEnabled()) {
+		const expandHint = () => keyHint("app.tools.expand", "expand");
+		const toolStateKeys = new Map<string, symbol>();
+		pi.registerToolRenderer((name, next) => {
+			const baseline = next();
+			// Respect purpose-built extension renderers (persona, MCP, etc.). Only
+			// standard tools and tools without a renderer acquire our presentation.
+			if (!isPolishedTool(name) && (baseline?.renderCall || baseline?.renderResult)) return baseline;
+			let stateKey = toolStateKeys.get(name);
+			if (!stateKey) {
+				stateKey = Symbol(`pi1337-tool-row:${name}`);
+				toolStateKeys.set(name, stateKey);
+			}
+			return createSwitchableToolView(createToolView(name, expandHint, {
+				highlightCode: (code, path) => {
+					const language = getLanguageFromPath(path);
+					return language ? highlightCode(code, language) : code.split("\n");
+				},
+			}), baseline,
+				() => chromeActive, { Box, Container, Text, toolName: name, expandHint,
+					imagesSupported: () => getCapabilities().images !== null }, stateKey);
+		});
+	}
+
 	// Read the theme's page background and optional adjacent .pi1337 sidecar.
 	// Keep reading a legacy root pi1337 block when no sidecar exists, so custom
 	// themes created before the strict Pi 1.0 schema migration still work.
@@ -133,7 +166,7 @@ export default function pi1337(pi: ExtensionAPI) {
 		try {
 			const json = JSON.parse(readFileSync(path, "utf8")) as {
 				export?: { pageBg?: unknown };
-				pi1337?: { background?: unknown; avatar?: unknown };
+				pi1337?: { background?: unknown; avatar?: unknown; spinner?: unknown };
 			};
 			let extras = json.pi1337;
 			try {
@@ -147,6 +180,7 @@ export default function pi1337(pi: ExtensionAPI) {
 			const avatar = extras?.avatar;
 			const avatarObj = avatar && typeof avatar === "object" && !Array.isArray(avatar) ? (avatar as { align?: unknown; placement?: unknown }) : undefined;
 			return {
+				spinner: parseSpinner(extras?.spinner),
 				pageBg: typeof json.export?.pageBg === "string" ? json.export.pageBg : undefined,
 				background: typeof extras?.background === "string" ? extras.background : undefined,
 				avatar: parseAvatar(avatar),
@@ -291,7 +325,14 @@ export default function pi1337(pi: ExtensionAPI) {
 		if (!force && src === themeConfigSource) return;
 		themeConfigSource = src;
 		avatarImageCache.clear(); // a live palette switch must not retain every custom image ever seen
+		const previousSpinner = themeConfig.spinner ?? DEFAULT_SPINNER;
 		themeConfig = readThemeConfig(ctx);
+		const nextSpinner = themeConfig.spinner ?? DEFAULT_SPINNER;
+		if (previousSpinner !== nextSpinner) {
+			spin = 0;
+			if (working && chromeActive && !waitingForUser) startSpinner();
+			else stopSpinner();
+		}
 		themeDir = src ? dirname(src) : undefined;
 		if (!force) {
 			repaintBackground(); // the palette's void (tint) may have changed
@@ -373,10 +414,11 @@ export default function pi1337(pi: ExtensionAPI) {
 	// Single source of motion: always restart from a clean timer so we never stack intervals.
 	const startSpinner = () => {
 		stopSpinner();
+		const profile = themeConfig.spinner ?? DEFAULT_SPINNER;
 		timer = setInterval(() => {
-			spin = (spin + 1) % SPINNER.length;
+			spin = (spin + 1) % profile.frames.length;
 			requestRender();
-		}, 90);
+		}, profile.intervalMs);
 	};
 
 	// Pi may retry, compact, or continue after agent_end. Only agent_settled ends
@@ -435,6 +477,7 @@ export default function pi1337(pi: ExtensionAPI) {
 
 	function apply(ctx: ExtensionContext): void {
 		if (!ctx.hasUI || ctx.mode !== "tui") return;
+		spin = 0;
 		applyTheme(ctx);
 
 		// Read the palette's pi-1337 config now that the (possibly switched) theme is live.
@@ -475,7 +518,11 @@ export default function pi1337(pi: ExtensionAPI) {
 				getCost: () => cachedCost,
 				isWorking: () => working,
 				isWaitingForUser: () => waitingForUser,
-				spinnerFrame: () => SPINNER[spin],
+				spinnerFrame: () => spinnerFrame(themeConfig.spinner ?? DEFAULT_SPINNER, spin),
+				spinnerRows: () => (themeConfig.spinner ?? DEFAULT_SPINNER).frameRows(spin),
+				spinnerColor: () => (themeConfig.spinner ?? DEFAULT_SPINNER).color,
+				spinnerHeight: () => (themeConfig.spinner ?? DEFAULT_SPINNER).height,
+				spinnerColumns: () => (themeConfig.spinner ?? DEFAULT_SPINNER).columns,
 				bindTui: (tui) => {
 					activeTui = tui;
 					paintBackground(); // editor may bind the tui before the footer factory runs
@@ -492,6 +539,9 @@ export default function pi1337(pi: ExtensionAPI) {
 		startOutOfBandRedrawGuard();
 		paintBackground(); // covers a re-enable where the footer factory already ran (activeTui bound)
 		syncActivity(ctx); // restore the current run/prompt/compaction state on toggle-on
+		// Invalidate existing transcript rows: a full redraw alone does not rebuild
+		// component caches, including history created before session_start.
+		activeTui?.invalidate();
 		// Also repairs any raw startup diagnostic emitted before the guard was bound.
 		requestFullRender();
 	}
@@ -500,6 +550,7 @@ export default function pi1337(pi: ExtensionAPI) {
 		stopOutOfBandRedrawGuard();
 		cancelThemeConfigRefresh();
 		working = false; // reset spinner state so a re-enable never shows a frozen frame
+		spin = 0;
 		chromeActive = false;
 		avatarState = "idle";
 		turnErrored = false;
@@ -511,6 +562,9 @@ export default function pi1337(pi: ExtensionAPI) {
 			ctx.ui.setFooter(undefined);
 			ctx.ui.setWorkingVisible(true);
 			ctx.ui.setHiddenThinkingLabel();
+			// Restore original tool callbacks/shells before dropping the TUI handle.
+			activeTui?.invalidate();
+			requestFullRender();
 		}
 		themeConfig = {};
 		themeDir = undefined;

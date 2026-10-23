@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { frameEditor, GUTTER, isRuleLine, lastRuleIndex, layoutRow, resolveSegment, ROUNDED, scrollMarker } from "../src/frame.ts";
-import { stripAnsi, visibleWidth } from "../src/width.ts";
+import { editorWidthFor, frameEditor, GUTTER, isRuleLine, lastRuleIndex, layoutRow, resolveSegment, ROUNDED, scrollMarker } from "../src/frame.ts";
+import { stripAnsi, visibleWidth, useTerminalMetrics } from "../src/width.ts";
+import { visibleWidth as hostVisibleWidth, truncateToWidth as hostTruncateToWidth } from "@earendil-works/pi-tui";
 
 const id = (s: string) => s;
 
@@ -216,6 +217,20 @@ test("frameEditor drops the rules and builds a clean rounded box with chrome ins
 	assert.ok(out[1].startsWith("   │") && out[1].endsWith("│"));
 });
 
+test("editor width and right gutter reserve a fixed one- or three-cell spinner through idle and working states", () => {
+	for (const columns of [1, 3]) {
+		for (const boxWidth of Array.from({ length: 121 }, (_, width) => width)) {
+			const editorWidth = editorWidthFor(boxWidth, columns);
+			assert.equal(editorWidth, Math.max(0, boxWidth - 2 - GUTTER - 1 - columns));
+			const raw = ["─".repeat(editorWidth), "界🙂é".padEnd(editorWidth), "─".repeat(editorWidth)];
+			for (const spinner of ["", columns === 3 ? "▲△△" : "⠹"]) {
+				const out = frameEditor(raw, { boxWidth, leftMargin: 0, style: ROUNDED, border: id, spinner, spinnerColumns: columns });
+				assert.ok(out.every((line) => visibleWidth(line) <= boxWidth), `width ${boxWidth}, cols ${columns}`);
+			}
+		}
+	}
+});
+
 test("frameEditor shows no spinner glyph when idle", () => {
 	const ew = 14 - 2 * GUTTER - 2;
 	const raw = ["─".repeat(ew), " hi     ", "─".repeat(ew)];
@@ -278,6 +293,78 @@ test("frameEditor lets the spinner win row 0's gutter over the ↑ marker", () =
 	const out = frameEditor(raw, { boxWidth: 20, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", spinner: "⠹" });
 	assert.ok(out[1].includes("⠹") && !out[1].includes("↑")); // motion beats the hint
 	for (const line of out) assert.equal(visibleWidth(line), 20);
+});
+
+test("colored two-row status rows exactly fill the host-measured spinner slot at every supported width", () => {
+	useTerminalMetrics({ visibleWidth: hostVisibleWidth, truncateToWidth: hostTruncateToWidth });
+	try {
+		for (const columns of [1, 2, 3]) {
+			const boxWidth = 50;
+			const ew = editorWidthFor(boxWidth, columns);
+			const color = (s: string) => `\u001b[38;2;213;31;42m${s}\u001b[39m`;
+			const spinnerRows = [color("x".repeat(columns)), color("y".repeat(columns))];
+			for (const spinner of ["", color("?"), color("x".repeat(columns))]) {
+				const out = frameEditor(["─".repeat(ew), " input".padEnd(ew), "─".repeat(ew)], {
+					boxWidth, leftMargin: 0, style: ROUNDED, border: color, spinnerColumns: columns,
+					spinnerHeight: 2, spinnerRows, spinner, statusLeft: color("workspace"),
+				});
+				assert.equal(hostVisibleWidth(out[1]), boxWidth, `body width, columns=${columns}, spinner=${JSON.stringify(spinner)}`);
+				assert.equal(hostVisibleWidth(out[2]), boxWidth, `status width, columns=${columns}, spinner=${JSON.stringify(spinner)}`);
+			}
+		}
+	} finally {
+		useTerminalMetrics();
+	}
+});
+
+test("two-row logo uses status slot for one input row and content row for multiline input", () => {
+	const boxWidth = 50;
+	const ew = editorWidthFor(boxWidth, 3);
+	const options = { boxWidth, leftMargin: 0, style: ROUNDED, border: id, spinnerColumns: 3, spinnerHeight: 2, spinner: " ▲ ", spinnerRows: [" ▲ ", "△ △"], statusLeft: "WORKSPACE", statusCenter: "USAGE", statusRight: "MODEL" };
+	const single = frameEditor(["─".repeat(ew), " input".padEnd(ew), "─".repeat(ew)], options);
+	assert.equal(stripAnsi(single[1]).slice(-5, -1), " ▲  ");
+	assert.equal(stripAnsi(single[2]).slice(-5, -1), "△ △ ");
+	assert.ok(stripAnsi(single[2]).includes("WORKSPACE"));
+	const multi = frameEditor(["─".repeat(ew), " input".padEnd(ew), " second".padEnd(ew), "─".repeat(ew)], options);
+	assert.equal(stripAnsi(multi[2]).slice(-5, -1), "△ △ ");
+	assert.equal(multi.length, 5, "logo consumes existing content/status rows only");
+	assert.equal(visibleWidth(stripAnsi(single[2])), boxWidth);
+});
+
+test("down-scroll marker uses the fourth gutter cell beside the lower triangle", () => {
+	const boxWidth = 50;
+	const ew = editorWidthFor(boxWidth, 3);
+	const out = frameEditor(["─".repeat(ew), " input".padEnd(ew), " second".padEnd(ew), "──── ↓ 3 more"], {
+		boxWidth, leftMargin: 0, style: ROUNDED, border: id, spinnerColumns: 3, spinnerHeight: 2,
+		spinner: " ▲ ", spinnerRows: [" ▲ ", "△ △"], statusLeft: "status",
+	});
+	assert.ok(stripAnsi(out[2]).endsWith("△ △↓│"));
+	for (const line of out) assert.ok(visibleWidth(line) <= boxWidth);
+});
+
+test("two-row logo compact autocomplete fallback keeps original suggestion index and only top row", () => {
+	const boxWidth = 50;
+	const ew = editorWidthFor(boxWidth, 3);
+	const out = frameEditor(["─".repeat(ew), " input".padEnd(ew), "─".repeat(ew), "suggest".padEnd(ew)], {
+		boxWidth, leftMargin: 0, style: ROUNDED, border: id, spinnerColumns: 3, spinnerHeight: 2,
+		spinner: " ▲ ", spinnerRows: [" ▲ ", "△ △"], statusLeft: "STATUS",
+	});
+	assert.equal(out.length, 4);
+	assert.ok(stripAnsi(out[1]).includes(" ▲ "));
+	assert.ok(!stripAnsi(out[1]).includes("▲△△"));
+	assert.ok(stripAnsi(out[3]).includes("suggest"));
+	assert.ok(out[3].trimStart().startsWith("suggest"), "first suggestion remains at its original framed row");
+});
+
+test("pyramid frames never overflow for all terminal widths 0 through 120", () => {
+	const rows = [" ▲ ", "△ △"];
+	for (let width = 0; width <= 120; width++) {
+		const boxWidth = Math.min(width, 60);
+		const ew = editorWidthFor(boxWidth, 3);
+		const raw = ["─".repeat(ew), "input".padEnd(ew), "second".padEnd(ew), "─".repeat(ew)];
+		const out = frameEditor(raw, { boxWidth, leftMargin: 0, style: ROUNDED, border: id, spinnerColumns: 3, spinnerHeight: 2, spinner: rows[0], spinnerRows: rows, statusLeft: "x" });
+		for (const line of out) assert.ok(visibleWidth(line) <= width, `width=${width}: ${JSON.stringify(stripAnsi(line))}`);
+	}
 });
 
 test("frameEditor places autocomplete below the box at the base editor's row", () => {

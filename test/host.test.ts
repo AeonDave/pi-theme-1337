@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-test("Pi 1.3 loads the package and all palettes through its real resource loader", async () => {
+const packageJson = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")) as {
+	devDependencies: { "@earendil-works/pi-coding-agent": string };
+};
+const hostVersion = packageJson.devDependencies["@earendil-works/pi-coding-agent"];
+
+test(`Pi ${hostVersion} loads the package and all palettes through its real resource loader`, async () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi1337-host-"));
 	try {
 		const loader = new DefaultResourceLoader({
@@ -24,7 +29,7 @@ test("Pi 1.3 loads the package and all palettes through its real resource loader
 		const extension = loaded.extensions[0];
 		assert.ok(extension);
 		for (const event of ["agent_settled", "ui_prompt_start", "ui_prompt_end", "session_compact_failed"]) {
-			assert.ok(extension.handlers.has(event), `missing Pi 1.3 handler: ${event}`);
+			assert.ok(extension.handlers.has(event), `missing Pi ${hostVersion} handler: ${event}`);
 		}
 		const themes = loader.getThemes();
 		assert.deepEqual(themes.diagnostics, []);

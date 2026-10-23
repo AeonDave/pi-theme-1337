@@ -19,6 +19,7 @@ test("shutdown restores terminal tint and all chrome after a real apply", async 
 			commands.set(name, command);
 		},
 		registerShortcut() {},
+		registerToolRenderer() {},
 	} as unknown as ExtensionAPI;
 	pi1337(api);
 
@@ -28,6 +29,7 @@ test("shutdown restores terminal tint and all chrome after a real apply", async 
 	let footerComponent: { render(width: number): string[] } | undefined;
 	const tui = {
 		terminal: { write: (text: string) => terminalWrites.push(text) },
+		invalidate() {},
 		requestRender: (force?: boolean) => calls.push(`render:${String(force)}`),
 	} as unknown as TUI;
 	const theme = {
@@ -86,7 +88,7 @@ test("shutdown restores terminal tint and all chrome after a real apply", async 
 		assert.equal(widgetCalls, widgetsBeforeSwitch, "footer render performs no widget mutation");
 		await Promise.resolve();
 		assert.equal(terminalWrites.length, writesBeforeSwitch + 2, "one deferred switch resets and repaints the tint");
-		assert.equal(widgetCalls, widgetsBeforeSwitch + 1, "repeated renders coalesce to one avatar refresh");
+		assert.equal(widgetCalls, widgetsBeforeSwitch, "bundled palette switches do not install an avatar widget");
 
 		await handlers.get("session_shutdown")?.({ type: "session_shutdown" }, ctx);
 		assert.equal(terminalWrites.at(-1), OSC11_RESET, "shutdown must return the terminal to its configured background");

@@ -3,6 +3,7 @@
  *
  * | Env var | Default | Purpose |
  * |---------|---------|---------|
+ * | `PI_1337_POLISH`         | `on`         | Compact tool rows and diff previews; `off` restores host renderers. |
  * | `PI_1337_DISABLE`        | _(off)_      | Any non-empty value disables the extension entirely. |
  * | `PI_1337_THEME`          | `on`         | `off` keeps your current theme; `amber`/`ice`/`split` pick a palette; `on`/`green` = the default green. |
  * | `PI_1337_THINKING_LABEL` | `∴ thinking` | Label for the collapsed thinking row. |
@@ -37,6 +38,7 @@ function agentDir(): string {
 /** Settings persisted in `<stateDir>/config.json`. Keys map 1:1 to the env vars. */
 export interface ConfigFileSettings {
 	disable?: boolean;
+	polish?: boolean;
 	theme?: string;
 	thinkingLabel?: string;
 	copyKey?: string;
@@ -82,6 +84,7 @@ export function configFileSettings(): ConfigFileSettings {
 	const out: ConfigFileSettings = {};
 	const src = parsed as Record<string, unknown>;
 	if (typeof src.disable === "boolean") out.disable = src.disable;
+	if (typeof src.polish === "boolean") out.polish = src.polish;
 	if (typeof src.theme === "string") out.theme = src.theme;
 	if (typeof src.thinkingLabel === "string") out.thinkingLabel = src.thinkingLabel;
 	if (typeof src.copyKey === "string") out.copyKey = src.copyKey;
@@ -192,9 +195,18 @@ export function backgroundEnv(): string | undefined {
 	return process.env.PI_1337_BG ?? configFileSettings().background;
 }
 
+/** Compact transcript rendering follows the redesign unless explicitly disabled. */
+export function polishEnabled(): boolean {
+	const raw = process.env.PI_1337_POLISH?.trim().toLowerCase();
+	if (raw === "off") return false;
+	if (raw === "on") return true;
+	return configFileSettings().polish !== false;
+}
+
 /** Every setting after merging env over the config file over the built-in defaults. */
 export interface ResolvedSettings {
 	disable: boolean;
+	polish: boolean;
 	autoTheme: boolean;
 	theme?: string;
 	thinkingLabel: string;
@@ -206,6 +218,7 @@ export interface ResolvedSettings {
 export function resolveSettings(): ResolvedSettings {
 	return {
 		disable: isDisabled(),
+		polish: polishEnabled(),
 		autoTheme: autoThemeEnabled(),
 		theme: envPalette(),
 		thinkingLabel: hiddenThinkingLabel(),

@@ -18,7 +18,7 @@ pi-1337/
 │   ├── 1337-split.json   # green + magenta gun     │
 │   ├── 1337-fallout.json # radioactive Pip-Boy lime │
 │   ├── 1337-skynet.json  # Terminator red-on-black ┘
-│   └── 1337-{fallout,skynet}.pi1337 # adjacent JSON sidecars (not theme resources)
+│   └── *.pi1337        # per-palette text spinner; Fallout/Skynet also opt into tint (not theme resources)
 ├── src/
 │   ├── index.ts        # wiring: events, /pi-1337 command, copy shortcut, apply/clear, theme switch, spinner timer
 │   ├── editor.ts       # FramedEditor (CustomEditor subclass) + setEditorComponent factory
@@ -27,7 +27,8 @@ pi-1337/
 │   ├── subagents.ts    # pure: countSubagentsFromInput / countSubagentsFromResult (live agent count)
 │   ├── width.ts        # measurement seam: useTerminalMetrics + box geometry (+ pure fallback)
 │   ├── background.ts   # pure: OSC 11 tint build/reset + hex normalize/resolve (opt-in terminal bg)
-│   ├── avatar.ts       # pure: parse/select the theme's avatar frames — PNG or ASCII (pi1337.avatar)
+│   ├── avatar.ts       # pure: parse/select optional user-configured avatar frames
+│   ├── spinner.ts      # pure: validated text-motion profiles and frame selection
 │   ├── redraw-guard.ts # reversible stderr observer → coalesced full TUI redraw (never alters bytes)
 │   └── config.ts       # env-driven config (PI_1337_*)
 └── test/
@@ -49,9 +50,13 @@ drawn *inline* as inverse-video text), a bottom `─` rule, then autocomplete ro
 
 1. computes `boxWidth = min(maxWidth, width − 2·margin)` and a centered
    `leftMargin`;
-2. calls `super.render(boxWidth − 2·GUTTER − 2)` to get the real editor at the
-   inner width (the rounded box spends two columns per side on chrome gutters
-   plus the rails);
+2. calls `super.render(editorWidthFor(boxWidth, spinnerColumns))` to get the
+   real editor at the inner width: two rails, left `GUTTER = 2`, and a right
+   gutter of `1 + spinnerColumns` (one to three indicator cells). This width is
+   reserved even when idle or waiting; two-row profiles also reserve a
+   `1 + spinnerColumns` status-row slot (four cells for Skynet), included in the
+   gauge-fit budget. Render caching and mouse
+   mapping use the same input-width helper, so activity never reflows the buffer;
 3. hands the raw lines to `frameEditor` (pure), which drops the two rules, wraps
    the content lines in `│` rails with fixed-width side gutters (prompt `›` +
    spinner on row 0), caps them with a clean rounded `╭─╮`/`╰─╯` outline, and
@@ -100,7 +105,7 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
 - **Render-only presentation with transparent cache invalidation.** `FramedEditor`
   extends `CustomEditor` and caches the base editor's raw layout across
   spinner-only redraws; its `invalidate`/input/text/padding overrides only drop
-  that cache and forward to the base class. On Pi 1.3 it forwards `handleMouse`,
+  that cache and forward to the base class. On the current host it forwards `handleMouse`,
   invalidating cursor/handled changes but not unhandled press/drag/release events
   owned by terminal text selection. Editing, autocomplete, history, and keybindings
   stay the base class's. Never swallow input. (The clean-copy feature stays out
@@ -131,6 +136,11 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   as its scroll indicators — `scrollMarker` re-hangs `↑`/`↓` in the first/last
   content row's right gutter (the spinner wins row 0) so a buffer that continues
   above or below the visible rows stays visible.
+- **Status colors follow the active theme.** Workspace, branch, session,
+  provider/model/persona and separators use distinct semantic roles. Context
+  retains the >70% warning / >90% error thresholds; the `~$` cost is independently
+  muted. A five-cell usage gauge is optional decoration: show it only if the
+  full metadata and numeric usage already fit, never at the expense of content.
 - **The status row narrows semantically, never char-by-char.** The right
   segment is a `RowCandidate[]` degradation ladder resolved by
   `resolveSegment` (frame.ts, pure): long workspace/branch/session metadata yields
@@ -140,6 +150,30 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   it) → persona alone when present, otherwise the model keeps trimming.
   Blind right-truncation was the old behavior — don't reintroduce it; the
   trailing truncation loops in `layoutRow` are extreme-width defense only.
+- **Compact tool views are presentation-only.** `tool-view.ts` and
+  `tool-adapter.ts` use type-only Pi imports; runtime constructors are injected
+  from `index.ts`. `registerToolRenderer` changes standard tool rows and supplies
+  a fallback for otherwise unrendered tools, never execution, schemas, prompts
+  or results. Unknown tools with custom renderers keep them. Use semantic theme
+  tokens, the shared width ruler, explicit collapsed errors and expandable
+  output. Edit previews come from recorded result diffs; write previews are
+  submitted content, not an inferred before/after diff. `PI_1337_POLISH=off`
+  (config `polish:false`) leaves host rendering alone.
+  The current host caches renderer descriptors and shell attachment per transcript row:
+  conditional resolvers or changing `renderShell` do not restore existing rows.
+  The stable self-shell adapter recomposes the original callbacks/default box on
+  toggle-off. `apply()`/`clear()` invalidate the TUI before full redraw, while the
+  handle is still present; `requestRender(true)` alone does not invalidate row
+  caches. Adapter row keys stay stable per tool within an extension instance:
+  HTML export resolves call and result descriptors separately, while the host's
+  per-call state still owns each row and its isolated lanes. Generic fallbacks
+  are built only when their lane is selected and cached until their inputs or
+  presentation change; genuine hidden renderer hooks still receive every update
+  and final callback for cleanup. Tool views cache one rendered width/padding
+  combination and clear it on invalidation, so spinner redraws do not repeat
+  wrapping and highlighting. The host still owns image rendering. Active-TUI
+  HTML exports inherit these renderers because the public renderer context has
+  no export-mode flag.
 - **Pi's other channels are not ours to re-implement.** `notify()` renders into
   the chat log; retry/compaction/branch-summary indicators keep their own
   `statusContainer` kinds (`setWorkingVisible(false)` suppresses only
@@ -155,8 +189,8 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   and dispose ownership-safely: restore only if our wrapper is still installed.
   `apply()` also forces one full redraw to repair diagnostics emitted just before
   the guard bound; `clear()` disables the guard before dropping the TUI handle.
-- **One source of motion.** The row-0 braille spinner — a single `startSpinner`
-  helper (`90ms` timer) driven by `agent_start`/`agent_settled`, gated on `chromeActive`
+- **One source of motion.** The row-0 text spinner uses one `startSpinner`
+  timer, driven by `agent_start`/`agent_settled`, gated on `chromeActive`
   (so non-tui modes never start it). `agent_end` is not settlement: retries,
   compaction and queued work can follow. Track prompts/compaction even while
   toggled off so `apply()` restores their state. Blocking `ui_prompt_start` pauses
@@ -164,6 +198,17 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   Manual compaction animates without inventing an agent run. Both
   `session_compact` and `session_compact_failed` clear compaction state; an abort
   is not an error. Clear the timer on settlement/disable/shutdown.
+  Each `.pi1337` sidecar may set `spinner: {frames, intervalMs, color}`. The
+  pure parser accepts legacy single-row strings or explicit one/two-row frames,
+  rejects controls/bidi/newlines, blank or unequal geometry, more than 32 frames,
+  widths outside 1–3 host-measured columns, invalid `#RRGGBB`, or intervals
+  outside 60–500 ms. RGB overrides become typed color values; absent overrides
+  use the active semantic accent. Invalid/missing profiles use the original
+  90 ms braille default. A live theme switch resets the frame and restarts only
+  active, unpaused motion; it never creates a second timer. Skynet's crimson
+  `#d51f2a` pyramid uses its fixed three-cell right gutter and four-cell status
+  reservation; with autocomplete and only one content row, only its top triangle
+  is shown so suggestion indices never shift. Other bundled profiles stay one-row.
 - **Always reversible.** Everything `apply()` changes, `clear()` restores:
   `setEditorComponent(undefined)`, `setFooter(undefined)`, `setWorkingVisible(true)`,
   `setHiddenThinkingLabel()`, `setTheme(previous)` (only while the live theme is
@@ -179,7 +224,8 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   a backdrop), so it is intentionally out of scope — that stays terminal config.
   Background color/tint math lives in the pure `background.ts` (OSC build +
   `normalizeHex` + `resolveBackgroundHex` + `resolveBackground`), so index.ts only
-  owns the write. The theme-driven **ASCII avatar** is the same shape: a widget
+  owns the write. Optional user-configured avatars (ASCII or image) use the
+  same shape: a widget
   (`setWidget("pi1337-avatar", …, {placement:"belowEditor"})` by default) whose frames come
   from the pure `avatar.ts` (`parseAvatar`/`selectAvatar`), swapped on a small
   task-state machine (`avatarState`: idle → working on `agent_start`, confused on
@@ -192,8 +238,9 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   which uses the default `aboveEditor` container. `align:"center"` pads via a
   widget factory that re-centers on each render width.
   Each state falls back toward `idle`, so a theme may ship one frame or four. Only
-  present when the active theme ships `pi1337.avatar`; a `working`-only avatar
-  "appears when the AI responds". A frame is a **PNG** (`{ image }`) or **ASCII**
+  present only when the active theme configures `pi1337.avatar`; bundled
+  palettes ship no avatar configuration or image assets. A `working`-only avatar
+  "appears when the AI responds". A frame is an image (`{ image }`) or **ASCII**
   (`{ lines }`): the PNG is drawn through pi-tui's terminal image protocol
   through pi-tui's own `Image` component (including Kitty `moveCursor:false`,
   iTerm2 row accounting, and live capability invalidation; files are capped at
@@ -212,10 +259,11 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   stays pure (parsing plus protocol-aware image-cell geometry). Kitty may reserve
   one fewer column than iTerm2 for a height-limited PNG; match pi-tui's size
   decision when centering, and test against its public `renderImage().columns`.
-  Tint and avatar are read from a JSON sidecar named after the active theme
+  Tint and optional user-configured avatar are read from a JSON sidecar named
+  after the active theme
   (`1337-fallout.json` → `1337-fallout.pi1337`) via `ctx.ui.theme.sourcePath`.
   The non-`.json` extension prevents Pi's theme discovery from loading the
-  sidecar as a palette, and keeps the theme JSON valid against Pi 1.3's strict
+  sidecar as a palette, and keeps the theme JSON valid against the current host's strict
   published schema. A legacy root `pi1337` block remains a fallback only when
   no sidecar exists. Read in `apply()` into `themeConfig` +
   `themeDir`, and re-read on a live `/settings` switch: Pi fires no theme event, so
@@ -252,9 +300,11 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   monochrome rule (amber family the only exception) to the default `1337.json`
   only — the amber/ice/split siblings are intentionally other-hued. Also enforce
   `toolDiffContext` contrast ≥4.5:1 on `toolSuccessBg`, not only `dim` contrast.
-- **Current host.** Target Pi ≥1.3.0; keep both Pi development packages pinned
-  together and host-provided packages as wildcard peers. Tests locate the theme
-  schema at the release's published `schemas/theme.schema.json`.
+- **Current host.** Develop and qualify only against the latest installed Pi
+  release. Keep both Pi development packages pinned to that exact matched
+  version and host-provided packages as wildcard peers; wildcard peers do not
+  promise compatibility with older hosts. Tests locate the theme schema at the
+  installed release's published `schemas/theme.schema.json`.
 
 ## Verify
 

@@ -41,8 +41,15 @@ export const GUTTER = 2;
  * of that arithmetic — the caller renders at this width and `frameEditor` fits
  * every row to it, so the two can never disagree and pull the right rail off.
  */
-export function editorWidthFor(boxWidth: number): number {
-	return Math.max(0, boxWidth - 2 - 2 * GUTTER);
+export function editorWidthFor(boxWidth: number, spinnerColumns = 1): number {
+	// Keep one gap plus the active profile width in the right gutter at all times,
+	// including idle and waiting renders, so activity never changes cursor geometry.
+	return Math.max(0, boxWidth - 2 - GUTTER - 1 - Math.max(1, spinnerColumns));
+}
+
+/** Width reserved at the right of a two-row spinner's status row; one-row profiles reserve none. */
+export function statusSlotWidth(spinnerColumns = 1, spinnerHeight = 1): number {
+	return spinnerHeight === 2 ? Math.max(1, spinnerColumns) + 1 : 0;
 }
 
 export interface FrameOptions {
@@ -55,8 +62,14 @@ export interface FrameOptions {
 	border: (text: string) => string;
 	/** Pre-colored prompt sigil (1 col) placed in the first row's left gutter. */
 	prompt?: string;
-	/** Pre-colored spinner glyph (1 col) placed in the first row's right gutter; empty when idle. */
+	/** Pre-colored first spinner row; empty when idle/waiting. */
 	spinner?: string;
+	/** Optional two-row animation; rows are rendered in the existing reserved gutter. */
+	spinnerRows?: readonly string[];
+	/** Reserve spinnerColumns + one gap at the status row for a two-row spinner, even while inactive. */
+	spinnerHeight?: number;
+	/** Fixed right-indicator width reserved even when idle (defaults to one cell). */
+	spinnerColumns?: number;
 	/** Pre-colored status segments laid out on the interior row above the bottom edge. */
 	statusLeft?: string | RowCandidate[];
 	statusCenter?: string;
@@ -243,6 +256,9 @@ function fit(line: string, width: number): string {
 
 export function frameEditor(raw: string[], options: FrameOptions): string[] {
 	if (raw.length < 2) return raw;
+	// A two-rail frame cannot exist in fewer than two columns; the editor factory
+	// normally falls back before this point, but keep the pure seam non-overflowing.
+	if (options.boxWidth < 2 + GUTTER + 1 + Math.max(1, options.spinnerColumns ?? 1)) return [];
 
 	const bottomIdx = lastRuleIndex(raw);
 	const content = raw.slice(1, Math.max(1, bottomIdx)); // editor lines (rules dropped)
@@ -252,13 +268,16 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 	const pad = " ".repeat(Math.max(0, leftMargin));
 	const v = border(style.v);
 	const INT = Math.max(0, boxWidth - 2); // interior columns between the rails
-	const editorWidth = editorWidthFor(boxWidth); // width the editor was rendered at
+	const spinnerColumns = Math.max(1, options.spinnerColumns ?? 1);
+	const editorWidth = editorWidthFor(boxWidth, spinnerColumns); // width the editor was rendered at
 
 	const top = `${pad}${border(style.tl + style.h.repeat(INT) + style.tr)}`;
 	const bottom = `${pad}${border(style.bl + style.h.repeat(INT) + style.br)}`;
 
 	const prompt = options.prompt ?? "";
 	const spinner = options.spinner ?? "";
+	const spinnerRows = options.spinnerRows;
+	const pyramid = (options.spinnerHeight ?? spinnerRows?.length ?? 1) === 2;
 	// Pi's rules double as scroll indicators; re-hang them on the rows they describe.
 	const up = scrollMarker(raw[0], "↑");
 	const down = scrollMarker(raw[bottomIdx], "↓");
@@ -269,8 +288,10 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 		// the rest get blank gutters so every content column lines up beneath the
 		// first. The otherwise-dead right gutters carry the scroll markers.
 		const lg = i === 0 && prompt ? ` ${prompt}` : "  ";
+		const logoRow = pyramid && spinnerRows && (i === 0 || i === 1) ? spinnerRows[i] : "";
 		const marker = i === 0 && spinner ? spinner : i === 0 && up ? border(up) : i === lastContent && down ? border(down) : "";
-		const rg = marker ? `${marker} ` : "  ";
+		const gutterText = i === 0 && pyramid && spinner ? `${spinnerRows?.[0] ?? spinner} ` : i === 1 && logoRow ? `${logoRow}${down && i === lastContent ? border(down) : " "}` : marker ? `${marker}${" ".repeat(Math.max(0, spinnerColumns + 1 - visibleWidth(marker)))}` : " ".repeat(spinnerColumns + 1);
+		const rg = visibleWidth(gutterText) > spinnerColumns + 1 ? truncateToWidth(gutterText, spinnerColumns + 1, "") : gutterText + " ".repeat(Math.max(0, spinnerColumns + 1 - visibleWidth(gutterText)));
 		return `${pad}${v}${lg}${fit(line, editorWidth)}${rg}${v}`;
 	});
 
@@ -279,8 +300,12 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 	// Hide status while the menu is open so that row indices match without
 	// reaching into the base editor's private mouse/layout state.
 	if (below.length === 0 && (options.statusLeft || options.statusCenter || options.statusRight)) {
-		const interior = layoutRow(options.statusLeft ?? "", options.statusCenter ?? "", options.statusRight ?? "", INT);
-		rows.push(`${pad}${v}${interior}${v}`);
+		const statusLogo = pyramid && content.length === 1 && spinnerRows && spinner ? spinnerRows[1] : "";
+		const slotWidth = statusSlotWidth(spinnerColumns, pyramid ? 2 : 1);
+		const statusWidth = Math.max(0, INT - slotWidth);
+		const interior = layoutRow(options.statusLeft ?? "", options.statusCenter ?? "", options.statusRight ?? "", statusWidth);
+		const statusGutter = slotWidth ? fit(`${statusLogo}${down && content.length === 1 ? border(down) : " "}`, slotWidth) : "";
+		rows.push(`${pad}${v}${interior}${statusGutter}${v}`);
 	}
 	rows.push(bottom);
 	for (const line of below) {

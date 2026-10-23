@@ -211,6 +211,24 @@ test("backgroundEnv reads background from the config file", () => {
 	assert.equal(backgroundEnv(), "on");
 });
 
+test("polished tool views default on and allow file/env opt-out", () => {
+	delete process.env.PI_1337_POLISH;
+	try {
+		assert.equal(resolveSettings().polish, true);
+		withConfigFile(JSON.stringify({ polish: false }));
+		assert.equal(resolveSettings().polish, false);
+		process.env.PI_1337_POLISH = " ON ";
+		assert.equal(resolveSettings().polish, true);
+		process.env.PI_1337_POLISH = "off";
+		assert.equal(resolveSettings().polish, false);
+		delete process.env.PI_1337_POLISH;
+		withConfigFile(JSON.stringify({ polish: "false" }));
+		assert.equal(resolveSettings().polish, true, "wrong-typed config is ignored");
+	} finally {
+		delete process.env.PI_1337_POLISH;
+	}
+});
+
 test("resolveSettings merges env over file over defaults", () => {
 	withConfigFile(JSON.stringify({ theme: "ice", copyKey: "ctrl+alt+y", thinkingLabel: "file label" }));
 	process.env.PI_1337_COPY_KEY = "ctrl+shift+p";

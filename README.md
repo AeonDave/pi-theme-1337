@@ -1,7 +1,7 @@
 # pi-1337
 
 A **phosphor CRT** redesign for [Pi](https://github.com/earendil-works/pi-mono):
-eight monochrome-terminal palettes **plus** a real TUI redesign that re-houses the
+eight distinct dark palettes **plus** a real TUI redesign that re-houses the
 editor in a centered rounded panel.
 
 ```
@@ -32,6 +32,13 @@ unbroken outline; the chrome lives *inside* it:
   slug** (`anthropic/opus-4-6` — never confuse a native model with the same id
   routed elsewhere) + active **persona** (right).
 
+The status row follows the active palette: workspace/persona in readable text,
+branch/model in accent, provider/separators dimmed, session/cost muted. A static
+five-cell context gauge (`[▰▰▱▱▱]`) appears when the interior is at least 90 columns
+and every full label still fits; it never takes room away from metadata. Filled
+cells and numeric context turn warning above 70% and error above 90%, while the
+`~$` estimate stays neutral. Unknown context has no gauge.
+
 On a narrow terminal the status row **degrades gracefully** instead of clipping:
 branch/session details yield first, followed by path ancestors; the repository
 name stays identifiable before optional provider detail returns. `…` marks
@@ -46,57 +53,90 @@ row — is gone, while Pi's own communication channels (notify toasts in the
 chat log, retry countdowns, compaction indicators, extension widgets and
 dialogs) render outside the footer and are untouched.
 
+## Compact tool views
+
+The redesign also gives the transcript a Claude Code-style presentation, with
+compact `●` tool headers instead of large default boxes. Successful shell,
+read and search/list calls collapse to a header with an expansion hint; other
+unrendered tools get short output previews. Edit diffs use aligned line-number
+and `+`/`−` gutters, theme-colored addition/removal bands, bold changed spans,
+and Pi's theme-aware syntax highlighting for context lines. Errors remain
+visible when collapsed; expand a tool to inspect its complete arguments and
+available output. Edit previews use the tool's recorded diff, while write previews show the submitted
+file content—not a fabricated before/after diff.
+
+This is an original implementation inspired by the visual direction of
+[pi-polish](https://github.com/Pringled/pi-extensions/tree/main/packages/pi-polish)
+and [pi-context-bar](https://github.com/Pringled/pi-extensions/tree/main/packages/pi-context-bar),
+adapted to 1337's palettes and inside-frame status row. It does not install those
+packages, change tool execution or prompts, or patch Pi's prototypes. Tools with
+their own custom renderer (such as pi-persona's delegation tools) keep it; standard
+file/shell tools and otherwise unrendered tools get the compact presentation.
+
+Tool views follow `/pi-1337`. To keep the editor redesign but use the host tool
+views, set `PI_1337_POLISH=off` or `"polish": false` in the config file, then
+`/reload`. Pi caches each transcript row's renderer, so toggling uses a stable
+adapter that recomposes the original renderers and their box rather than
+unregistering them. HTML exports also use the selected presentation for tools
+routed through extension renderers; some built-ins use Pi's separate HTML
+templates. Pi exposes no separate export-mode flag to tool renderers.
+
 ## The look
 
-A single-hue **phosphor CRT**, and now eight of them. Each palette maps all of
-Pi's 51 color tokens onto one luminance ramp, so it reads like a real
-green-screen terminal rather than a dark theme with an accent:
+Eight distinct dark palettes share the same 51-token contract and vivid phosphor/neon identities. Saturated body colors remain clearly chromatic; dim and muted text form lower, distinct tiers, while tool output stays readable as content rather than receding like metadata. Warning, error, and success use separate semantic hues, with dark panels preserving contrast rather than whitening foregrounds.
 
-| Theme | Hue | Alarm deviation |
-|-------|-----|-----------------|
-| `1337` *(default)* | green (`#04140b` panel-black → `#6fe58f` body → `#dcffe6` highlight) | amber errors/diffs, gold warnings |
-| `1337-amber` | amber (DEC VT220 / IBM 5151) | red errors, green diff-adds |
-| `1337-ice` | cool blue-white (IBM 8503) | warm amber errors |
-| `1337-cyber` | modern indigo-blue — electric periwinkle body, neon-cyan accent | hot-pink errors, mint diff-adds |
-| `1337-neon` | synthwave violet — lilac body, hot-magenta accent, cyan links/types | neon-red errors, mint diff-adds |
-| `1337-split` | green chrome + a magenta/cyan/gold **second gun** for real multi-hue code | rose errors |
-| `1337-fallout` | radioactive Pip-Boy lime — yellow-green body, acid-lime accent | Nuka-orange errors, amber warnings |
-| `1337-skynet` | Terminator red-on-black — glowing-red body, alarm-red accent | pure-red errors, amber-orange diff-adds |
+| Theme | Palette identity and visual hierarchy |
+|-------|----------------------------------------|
+| `1337` *(default)* | True green phosphor (`#73ec99`) on preserved void `#04140b`, with vivid mint accent and amber warning. |
+| `1337-amber` | Bright amber phosphor (`#ffbd68`) with cream-gold accent, yellow warning, green success, and coral error. |
+| `1337-ice` | Icy cyan-blue (`#9de4ff`) with a brighter cyan accent—not gray-blue. |
+| `1337-cyber` | Indigo surfaces, periwinkle body (`#9fbaff`), electric-cyan accent, and lavender keywords. |
+| `1337-neon` | Vivid synthwave violet (`#e5a2ff`) with hot-pink accent, cyan syntax, and plum surfaces. |
+| `1337-split` | Green phosphor (`#80e2a4`) with orchid accent, purple functions, and cyan types. |
+| `1337-fallout` | Bright yellow-lime (`#c8f96c`) with a distinct highlighter-lime accent, not another emerald. |
+| `1337-skynet` | Vivid red body (`#ff9292`) on preserved void `#0c0304`; hot-rose palette accent, crimson `#d51f2a` pyramid loader, and distinct pale-red error. |
 
-Every palette is tuned so **dim text clears WCAG AA** (≥ 4.5:1 on the terminal,
-panel, and selected-row backgrounds); unchanged diff text also clears 4.5:1 on
-successful tool output. The nine syntax roles spread across distinct luminance steps
-(`keyword` ≠ `type`, numbers in gold), so code has internal contrast without
-leaving the monochrome world. The siblings are contract-identical — same
-51 tokens — so switching themes never breaks the frame.
+Theme tests enforce minimum 7:1 for body/tool output and user/custom message text
+on their corresponding content surfaces, and 4.5:1 for secondary, syntax, status,
+and diff roles on their intended dark panels. These are measured against palette
+surfaces, not a claim that every role is accessible on every terminal background.
+The syntax contract requires six or more distinct colors and explicit separation
+between keywords/types, functions/variables, and strings/comments; a few related
+roles may intentionally share a color. See [palette design and measurements](docs/palette-design.md)
+for rationale, reference links, and test thresholds.
 
 ### Theme-driven extras (`.pi1337` sidecar)
 
 Pi's published theme schema allows only color/theme fields at the JSON
-root. Keep extra configuration next to the palette instead: for
-`themes/1337-fallout.json`, use `themes/1337-fallout.pi1337` (JSON content,
-non-`.json` extension so Pi does not discover it as another theme):
+root. Keep extra configuration next to the palette instead. All eight bundled
+`.pi1337` sidecars define text spinner profiles; Skynet uses an explicitly crimson
+loader color, while other profiles use their active palette accent. Fallout and
+Skynet additionally opt into the optional background tint. Bundled sidecars
+configure no avatars. See [theme motion](docs/theme-motion.md) for row geometry,
+color validation, and the compact autocomplete fallback.
+A user-owned sidecar can opt into an avatar (JSON content, non-`.json` extension
+so Pi does not discover it as another theme):
 
 ```jsonc
 {
-  "background": "on",            // tint the terminal window to the palette's void (env PI_1337_BG overrides)
-  "avatar": {                     // mascot beside the editor (below by default), reacting to task state
-    "idle":     "assets/vaultboy-wink.png",   // at rest / on startup
-    "working":  "assets/vaultboy-gum.png",    // while the model is answering
-    "confused": "assets/vaultboy-dizzy.png",  // during context compaction
-    "error":    "assets/vaultboy-ko.png"      // when a tool errored this turn
+  "background": "on", // tint the terminal window to the palette's void (env PI_1337_BG overrides)
+  "avatar": {          // optional, user-owned ASCII frames; omitted by bundled palettes
+    "idle": ["[ ready ]"],
+    "working": ["[ thinking ]"]
   }
 }
 ```
 
-The sidecar travels with its theme, and image paths remain relative to the
-**theme file's directory**. Older custom themes with a root `pi1337` block
-continue to work when no sidecar is present, but their editor may flag that
-legacy key under Pi's current strict published schema. Switching themes in
-`/settings` reloads the matching sidecar; after editing a sidecar in place, use
-`/reload` (Pi does not emit a theme-change event for sidecar edits).
+Avatar rendering is opt-in through a user's own theme sidecar or legacy theme
+configuration; bundled palettes ship no mascot images or avatar frames. Custom
+image paths (where supported) resolve relative to the **theme file's directory**.
+Older custom themes with a root `pi1337` block continue to work when no sidecar
+is present, but their editor may flag that legacy key under Pi's current strict
+published schema. Switching themes in `/settings` reloads the matching sidecar;
+after editing a sidecar in place, use `/reload` (Pi does not emit a theme-change
+event for sidecar edits).
 
-The avatar is a widget below the editor by default that swaps frame with the **task state**:
+A configured avatar is a widget below the editor by default that swaps frame with the **task state**:
 `idle` (startup / at rest) → `working` (model generating) → `confused` (context
 compaction) → `error` (a tool or compaction failed, shown once work settles).
 During an agent run the spinner stays active through automatic retries and continuations, stopping
@@ -106,21 +146,15 @@ Every state is optional and falls back toward `idle` (`working`→`idle`,
 `confused`→`working`→`idle`, `error`→`idle`), so one frame is enough; a bare
 value (`"avatar": "x.png"`) pins the same frame everywhere.
 
-Each frame is an **image** (PNG recommended, drawn via the terminal's image protocol — kitty,
-Ghostty, WezTerm, iTerm2) or **ASCII** (`"idle": ["line", …]`, a fallback where
-images aren't supported — GNOME Terminal, tmux, VS Code, Alacritty — or hidden if
-none). JPEG/GIF/WebP paths are also accepted, but may need host transcoding
-for Kitty. If Pi's image renderer itself returns a text fallback, that text is
-measured and clipped before centering, so it cannot overflow the terminal.
-Image paths are absolute or relative to the theme file. Add `"align":
+Each custom frame can be an **image** (drawn via a supported terminal image protocol) or **ASCII** (`"idle": ["line", …]`). On terminals without image support, configured ASCII lines are used or the avatar is hidden if none are provided. If Pi's image renderer itself returns a text fallback, that text is measured and clipped before centering, so it cannot overflow the terminal. Image paths are absolute or relative to the theme file. Add `"align":
 "center"` to the avatar object to center it over the terminal width (default
 left), and `"placement": "aboveEditor"` to move it above the input (default
 `belowEditor`). It sits **below** the editor by default because a kitty-image
 widget placed above the input disturbs the box's redraw beneath it (reserved
 image rows + cursor math) — below the editor it renders after the box, clear of
-the todos widget (which defaults above the editor). The bundled `fallout`
-palette ships a four-face Vault-Boy (wink → gum-bubble → dizzy → KO); `skynet`
-ships a single centered Skynet logo (a pinned "welcome"). The widget and any background tint are fully removed on `/pi-1337`
+the todos widget (which defaults above the editor). Bundled `fallout` and
+`skynet` sidecars enable only background tint; they do not configure avatars.
+Any configured custom widget and background tint are fully removed on `/pi-1337`
 off and shutdown.
 
 ## Install & use
@@ -181,6 +215,7 @@ A missing, malformed, or wrongly-typed `config.json` is ignored and the defaults
 | Env var | Config key | Default | Purpose |
 |---------|-----------|---------|---------|
 | `PI_1337_DISABLE` | `disable` | _(off)_ | Any non-empty value disables the extension entirely. |
+| `PI_1337_POLISH` | `polish` | `on` / `true` | Compact tool rows and diff previews. Env `off` or config `false` keeps the host views; env `on` explicitly enables them. |
 | `PI_1337_THEME` | `theme` | `on` | `off` keeps your current theme (redesign only); `green`/`amber`/`ice`/`cyber` (or `blue`)/`neon`/`split`/`fallout`/`skynet` (or a full id like `1337-ice`) pins a palette at startup, overriding the persisted `/settings` pick. Unset/`on`: a persisted bundled palette is kept, any other theme is replaced by the default green. |
 | `PI_1337_THINKING_LABEL` | `thinkingLabel` | `∴ thinking` | Label for the collapsed thinking row. |
 | `PI_1337_COPY_KEY` | `copyKey` | `alt+c` | Shortcut that copies the input buffer as clean text. Set empty to disable. |
@@ -195,9 +230,10 @@ extension (see [Pi themes](https://pi.dev/docs/latest/themes) and the
 
 | Concern | Mechanism |
 |---------|-----------|
-| Phosphor palettes | `themes/*.json` (all eight registered via `pi.themes`), applied with `ctx.ui.setTheme(...)` — the default resolved from `PI_1337_THEME` |
+| Phosphor palettes | `themes/*.json` (all eight registered via `pi.themes`), applied with `ctx.ui.setTheme(...)` — the default resolved from `PI_1337_THEME`; [spinner motion profiles](docs/theme-motion.md) are documented separately |
 | Framed, centered editor | `ctx.ui.setEditorComponent` → a `CustomEditor` subclass that renders the real editor at a reduced width, then wraps it in a rounded panel with margins; spinner-only redraws and unhandled mouse drags reuse the base editor layout until editing, a handled mouse event, resize, or autocomplete changes it |
 | Status on the frame | lifecycle events snapshot `ctx.getContextUsage()` plus session name/cost outside the render path; the editor combines those snapshots with `ctx.cwd`, `ctx.model`, the live subagent count, `footerData.getGitBranch()` (re-rendered via `onBranchChange`), and the published persona status. All foreign inline labels are terminal-control/bidi sanitized before framing. |
+| Compact tools and diffs | `pi.registerToolRenderer` with a stable self-rendered adapter; original callbacks are recomposed on disable, and existing rows are invalidated on toggles. Execution, arguments, results and custom third-party renderers stay unchanged. |
 | Clean-copy shortcut | `ctx.ui` `registerShortcut` + `copyToClipboard(editor.getText())` — copies the logical buffer, bypassing the rendered frame glyphs |
 | Hide the footer & spinner row | `ctx.ui.setFooter(() => emptyComponent)` + `ctx.ui.setWorkingVisible(false)` — activity moves into the frame spinner |
 | Out-of-band stderr resilience | while the frame is active, a reversible pass-through guard observes raw stderr writes from other extensions, leaves their bytes untouched, and schedules one `tui.requestRender(true)` per short (16 ms) burst so Pi resynchronizes its cached rows/cursor without a repaint storm |
@@ -221,7 +257,7 @@ npm test          # render, lifecycle-contract, palette, and Pi-component tests
 ```
 
 `frame.ts`, `format.ts`, `subagents.ts`, `avatar.ts`, `background.ts`,
-`redraw-guard.ts`, and `width.ts` are dependency-free, so they unit-test with nothing but
+`redraw-guard.ts`, `tool-view.ts`, `tool-adapter.ts`, and `width.ts` are dependency-free, so they unit-test with nothing but
 `tsx`; `editor.ts` / `index.ts` are the thin Pi wiring. Column measurement is the
 one thing not reimplemented: `index.ts` installs pi-tui's own `visibleWidth` /
 `truncateToWidth` via `useTerminalMetrics()`, so the frame is laid out with
@@ -230,9 +266,11 @@ running (`width.ts` keeps a mirror only as the fallback the tests use).
 `npm run test:parity` proves it end to end; point `PI_TUI` at your installed
 bundle. See [AGENTS.md](AGENTS.md).
 
-Targets **Pi >=1.3.0** and **Node >=22.19.0**. The Pi core peer ranges remain
-`"*"`, as required by Pi's package contract; development dependencies pin Pi
-`1.3.0`. Tests cover lifecycle state, long status labels, mouse-cache reuse,
+Targets the **latest installed Pi release** and **Node >=22.19.0**; development
+pins for `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` stay
+matched to that installed release. The Pi core peer ranges remain `"*"`, as
+required by Pi's package contract (they do not promise compatibility with older
+hosts). Tests cover lifecycle state, long status labels, mouse-cache reuse,
 cost accounting, image fallbacks, and palette contrast. The separate parity
 sweep checks the frame against the installed host renderer.
 

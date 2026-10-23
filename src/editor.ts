@@ -20,10 +20,9 @@ import {
 	type ExtensionContext,
 	type KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { EditorTheme, TUI, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
+import type { Color, EditorTheme, TUI, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import {
 	agentCount,
-	branchLabel,
 	cleanModel,
 	formatContext,
 	type ContextUsageLike,
@@ -33,8 +32,8 @@ import {
 	stableEmojiWidth,
 	usageLevel,
 } from "./format.ts";
-import { editorWidthFor, frameEditor, GUTTER, ROUNDED, type RowCandidate } from "./frame.ts";
-import { chooseBox } from "./width.ts";
+import { editorWidthFor, frameEditor, GUTTER, ROUNDED, statusSlotWidth, type RowCandidate } from "./frame.ts";
+import { chooseBox, visibleWidth } from "./width.ts";
 
 export interface FramedEditorDeps {
 	ctx: ExtensionContext;
@@ -52,6 +51,12 @@ export interface FramedEditorDeps {
 	/** Static prompt state; takes precedence over the animated working spinner. */
 	isWaitingForUser?: () => boolean;
 	spinnerFrame: () => string;
+	spinnerRows?: () => readonly string[];
+	spinnerColor?: () => Color | undefined;
+	/** Active theme's text-motion height; absent legacy callers keep one row. */
+	spinnerHeight?: () => number;
+	/** Active theme's fixed indicator width; absent legacy callers keep one cell. */
+	spinnerColumns?: () => number;
 	/** Hand the live TUI back so the spinner timer can request renders. */
 	bindTui: (tui: TUI) => void;
 	/** Hand the live editor back so a shortcut can copy its logical buffer. */
@@ -134,7 +139,7 @@ class FramedEditor extends CustomEditor {
 		const { fallback, boxWidth, leftMargin } = chooseBox(mouse.width, this.deps.maxWidth, this.deps.minMargin);
 		// render() uses the bare editor below this same inner-width threshold.
 		// Mouse must see the identical viewport or a narrow click shifts columns.
-		const editorWidth = editorWidthFor(boxWidth);
+		const editorWidth = editorWidthFor(boxWidth, this.deps.spinnerColumns?.() ?? 1);
 		if (fallback || editorWidth < 4) {
 			const result = base.call(this, event);
 			if (event.type === "click" || result !== undefined) this.invalidateRawRenderCache();
@@ -156,7 +161,8 @@ class FramedEditor extends CustomEditor {
 		const { fallback, boxWidth, leftMargin } = chooseBox(width, maxWidth, minMargin);
 		// The panel spends two columns per side on the rails plus the chrome gutters,
 		// so the editor renders at the reduced width. Too tiny to frame → fall back.
-		const editorWidth = editorWidthFor(boxWidth);
+		const spinnerColumns = this.deps.spinnerColumns?.() ?? 1;
+		const editorWidth = editorWidthFor(boxWidth, spinnerColumns);
 		if (fallback || editorWidth < 4) return super.render(width);
 
 		// Autocomplete suggestions can change asynchronously without changing the
@@ -188,6 +194,9 @@ class FramedEditor extends CustomEditor {
 		const border = (s: string) => theme.fg("muted", s);
 		const accent = (s: string) => theme.fg("accent", s);
 		const dim = (s: string) => theme.fg("dim", s);
+		const text = (s: string) => theme.fg("text", s);
+		const muted = (s: string) => theme.fg("muted", s);
+		const separator = dim(" · ");
 
 		const model = cleanModel(ctx.model?.id);
 		// pi-persona's label may carry a VS16 emoji (🗺️, ⚖️) whose terminal width is
@@ -198,39 +207,65 @@ class FramedEditor extends CustomEditor {
 		const sessionName = this.deps.getSessionName();
 		const contextUsage = this.deps.getContextUsage();
 		const usage = formatContext(contextUsage); // tokens used · %
-		// Escalate the usage color with the footer's thresholds so approaching
-		// auto-compact is visible: muted → warning (>70%) → error (>90%).
+		// Capacity gets the signal color, not the adjacent cost estimate. Unknown
+		// context stays quiet; known usage follows Pi's >70 / >90 thresholds.
 		const level = usageLevel(contextUsage?.percent);
-		const usageColor = level === "critical" ? "error" : level === "warn" ? "warning" : "muted";
+		const usageKnown = contextUsage?.tokens != null;
+		const usageColor = !usageKnown ? "dim" : level === "critical" ? "error" : level === "warn" ? "warning" : "accent";
 		const cost = this.deps.getCost();
 		const provider = ctx.model?.provider ? sanitizeInlineText(ctx.model.provider) : undefined;
 		// Prefer pi-persona's live agent count (covers strategy/council cores too, which the
 		// delegate-only counter misses); fall back to the delegate count. Pure logic in format.ts.
 		const { label } = agentCount(this.deps.getAgents?.(), this.deps.getSubagentCount());
 		const agentLabel = label.trim() ? `${accent(label.trim())}  ` : "";
-		const spinner = this.deps.isWaitingForUser?.()
-			? accent("?")
-			: this.deps.isWorking()
-				? accent(this.deps.spinnerFrame())
-				: "";
-		const branch = branchLabel(this.deps.getGitBranch?.());
-		const session = branchLabel(sessionName);
-		const leftSuffix = `${branch}${session}`;
+		const waiting = this.deps.isWaitingForUser?.() ?? false;
+		const working = this.deps.isWorking();
+		const activeSpinnerRows = working ? this.deps.spinnerRows?.() : undefined;
+		const spinnerColor = this.deps.spinnerColor?.();
+		const colorSpinner = (value: string) => spinnerColor ? theme.style(value, { fg: spinnerColor }) : accent(value);
+		const spinner = waiting ? theme.fg("warning", "?") : working ? colorSpinner(activeSpinnerRows?.[0] ?? this.deps.spinnerFrame()) : "";
+		const branch = sanitizeInlineText(this.deps.getGitBranch?.() ?? "");
+		const session = sanitizeInlineText(sessionName ?? "");
+		// Identity is readable text; branch is the navigational accent, while
+		// session metadata and separators recede without losing their labels.
+		const leftSuffix = `${branch ? separator + accent(branch) : ""}${session ? separator + muted(session) : ""}`;
 		// If the status row gets tight, keep the repository basename rather than
 		// clipping the tail of its path into an unidentifiable ancestor prefix.
 		const cwdSegments = cwd.split("/").filter(Boolean);
 		const cwdBasename = cwdSegments[cwdSegments.length - 1];
 		const compactCwd = cwdSegments.length > 1 && cwdBasename ? `…/${cwdBasename}` : cwd;
 		const statusLeft: RowCandidate[] = leftSuffix
-			? [{ pre: dim(` ${cwd}`), flex: dim(leftSuffix) }, { pre: dim(` ${cwd}`) }]
-			: [{ pre: dim(` ${cwd}`) }];
-		if (compactCwd !== cwd) statusLeft.push({ pre: dim(` ${compactCwd}`) });
+			? [{ pre: text(` ${cwd}`), flex: leftSuffix }, { pre: text(` ${cwd}`) }]
+			: [{ pre: text(` ${cwd}`) }];
+		if (compactCwd !== cwd) statusLeft.push({ pre: text(` ${compactCwd}`) });
 		// Bash mode (leading `!`): the sigil flips to a gold `$` so the mode is
 		// visible at the prompt itself, not just in the output styling.
 		const bash = isBashInput(this.getText());
 		const sigil = bash ? theme.fg("bashMode", "$") : accent("›");
 
-		const personaTail = persona ? dim(` · ${persona}`) : "";
+		const personaTail = persona ? separator + text(persona) : "";
+		// Keep the existing provider → trimmed model → persona degradation ladder.
+		const statusRight: RowCandidate[] = [
+			{ pre: `${agentLabel}${provider ? dim(`${provider}/`) : ""}${accent(model)}${personaTail} ` },
+			{ pre: agentLabel, flex: accent(model), post: `${personaTail} ` },
+			...(persona ? [{ pre: agentLabel, post: `${text(persona)} ` }] : []),
+		];
+		let statusCenter = theme.fg(usageColor, usage) + (cost ? separator + muted(cost) : "");
+		// A static five-cell capacity gauge is an ornament, never a reason to
+		// drop data. Spend its eight columns only when all full labels still fit,
+		// with normal segment gaps, in an interior at least 90 columns wide.
+		const interior = boxWidth - 2 - statusSlotWidth(spinnerColumns, this.deps.spinnerHeight?.() ?? 1);
+		const fullLeft = `${statusLeft[0].pre ?? ""}${statusLeft[0].flex ?? ""}`;
+		const fullRight = statusRight[0].pre ?? "";
+		const percent = contextUsage?.percent;
+		if (
+			usageKnown && percent != null && Number.isFinite(percent) && interior >= 90 &&
+			visibleWidth(fullLeft) + visibleWidth(statusCenter) + visibleWidth(fullRight) + 8 + 2 <= interior
+		) {
+			const filled = Math.round(Math.max(0, Math.min(100, percent)) / 20);
+			const gauge = dim("[") + theme.fg(usageColor, "▰".repeat(filled)) + dim("▱".repeat(5 - filled)) + dim("]");
+			statusCenter = `${gauge} ${statusCenter}`;
+		}
 		return frameEditor(raw, {
 			boxWidth,
 			leftMargin,
@@ -238,18 +273,17 @@ class FramedEditor extends CustomEditor {
 			border,
 			prompt: sigil, // first-row left gutter
 			spinner, // first-row right gutter (empty when idle)
+			spinnerRows: waiting ? undefined : activeSpinnerRows?.map(colorSpinner),
+			spinnerHeight: this.deps.spinnerHeight?.() ?? 1,
+			spinnerColumns,
 			statusLeft,
-			statusCenter: theme.fg(usageColor, `${usage}${cost ? ` · ${cost}` : ""}`), // usage (+ cost), centered
+			statusCenter,
 			// The provider/model slug ("anthropic/opus-4-6") keeps the same model id
 			// unambiguous across providers (native vs openrouter etc.). As the terminal
 			// narrows the segment degrades rung by rung (after the centered usage has
 			// already been dropped): provider hidden → model trimmed with … → persona
 			// alone when there is one, otherwise the model just keeps trimming.
-			statusRight: [
-				{ pre: `${agentLabel}${provider ? dim(`${provider}/`) : ""}${accent(model)}${personaTail} ` },
-				{ pre: agentLabel, flex: accent(model), post: `${personaTail} ` },
-				...(persona ? [{ pre: agentLabel, post: `${dim(persona)} ` }] : []),
-			],
+			statusRight,
 		});
 	}
 }

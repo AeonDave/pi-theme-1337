@@ -1,8 +1,4 @@
 {
-	"background": "on",
-	"avatar": {
-		"align": "center",
-		"placement": "belowEditor",
-		"idle": "assets/skynet-welcome.png"
-	}
+  "background": "on",
+  "spinner": { "frames": [[" ▲ ", "△ △"], [" △ ", "▲ △"], [" △ ", "△ ▲"]], "intervalMs": 180, "color": "#d51f2a" }
 }
