@@ -438,10 +438,9 @@ export default function pi1337(pi: ExtensionAPI) {
 	function applyTheme(ctx: ExtensionContext): void {
 		if (!autoThemeEnabled() || themeApplied) return;
 		const current = ctx.ui.theme.name;
-		// Env pin > persisted bundled palette > default green. A palette the user
-		// picked via /settings (e.g. 1337-ice) is one of ours: keep it — never
-		// stomp it back to the default on restart (setTheme would also overwrite
-		// the persisted choice in Pi's settings, losing it for good).
+		// Env pin > Pi's current bundled choice > config-file fallback > green.
+		// A palette selected via /settings must survive reload even when config.json
+		// contains an older startup preference; setTheme persists any target to Pi.
 		const target = chooseStartupTheme(current);
 		if (current === target) {
 			themeApplied = true;

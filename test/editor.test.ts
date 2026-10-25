@@ -61,7 +61,7 @@ function statusFixture(options: { height?: number; columns?: number; color?: { k
 test("status hierarchy uses active palette roles without adding columns or another row", () => {
 	const { editor, ui, status } = statusFixture();
 	let plain: string | undefined;
-	for (const name of ["1337", "1337-amber", "1337-ice", "1337-cyber", "1337-neon", "1337-split", "1337-fallout", "1337-skynet"]) {
+	for (const name of ["1337", "1337-amber", "1337-ice", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-neon", "1337-poison", "1337-magma", "1337-fallout", "1337-skynet", "1337-skynet-dark"]) {
 		ui.theme = statusTheme(name);
 		const row = status();
 		for (const [role, label] of [

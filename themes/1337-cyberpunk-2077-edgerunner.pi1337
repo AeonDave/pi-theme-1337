@@ -1,0 +1,7 @@
+{
+  "background": "on",
+  "spinner": {
+    "frames": ["▁▃▅", "▃▅▇", "▅▇▁", "▇▁▃", "▅▂▆", "▃▅▇"],
+    "intervalMs": 140
+  }
+}

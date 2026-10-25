@@ -1,0 +1,4 @@
+{
+  "background": "on",
+  "spinner": { "frames": [[" ▲ ", "△ △"], [" △ ", "▲ △"], [" △ ", "△ ▲"]], "intervalMs": 180, "color": "#d51f2a" }
+}

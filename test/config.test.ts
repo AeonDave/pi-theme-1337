@@ -75,12 +75,20 @@ test("envPalette pins a palette only when PI_1337_THEME explicitly names one", (
 	assert.equal(envPalette(), "1337-amber"); // alias, case/space-insensitive
 	process.env.PI_1337_THEME = "ice";
 	assert.equal(envPalette(), "1337-ice");
-	process.env.PI_1337_THEME = "split";
-	assert.equal(envPalette(), "1337-split");
+	process.env.PI_1337_THEME = "poison";
+	assert.equal(envPalette(), "1337-poison");
+	process.env.PI_1337_THEME = "magma";
+	assert.equal(envPalette(), "1337-magma");
+	process.env.PI_1337_THEME = "skynet-dark";
+	assert.equal(envPalette(), "1337-skynet-dark");
 	process.env.PI_1337_THEME = "green";
 	assert.equal(envPalette(), "1337");
 	process.env.PI_1337_THEME = "cyber";
 	assert.equal(envPalette(), "1337-cyber");
+	process.env.PI_1337_THEME = "cyberpunk-2077";
+	assert.equal(envPalette(), "1337-cyberpunk-2077");
+	process.env.PI_1337_THEME = "cyberpunk-2077-edgerunner";
+	assert.equal(envPalette(), "1337-cyberpunk-2077-edgerunner");
 	process.env.PI_1337_THEME = "blue"; // convenience alias for the same palette
 	assert.equal(envPalette(), "1337-cyber");
 	process.env.PI_1337_THEME = "neon";
@@ -91,10 +99,14 @@ test("envPalette pins a palette only when PI_1337_THEME explicitly names one", (
 	assert.equal(envPalette(), "1337-skynet");
 	process.env.PI_1337_THEME = "1337-ice"; // full id works too
 	assert.equal(envPalette(), "1337-ice");
+	process.env.PI_1337_THEME = "1337-cyberpunk-2077";
+	assert.equal(envPalette(), "1337-cyberpunk-2077");
+	process.env.PI_1337_THEME = "1337-cyberpunk-2077-edgerunner";
+	assert.equal(envPalette(), "1337-cyberpunk-2077-edgerunner");
 });
 
-test("isBundledTheme recognizes exactly the eight shipped palettes", () => {
-	for (const name of ["1337", "1337-amber", "1337-ice", "1337-split", "1337-cyber", "1337-neon", "1337-fallout", "1337-skynet"])
+test("isBundledTheme recognizes exactly the twelve shipped palettes", () => {
+	for (const name of ["1337", "1337-amber", "1337-ice", "1337-poison", "1337-magma", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-neon", "1337-fallout", "1337-skynet", "1337-skynet-dark"])
 		assert.ok(isBundledTheme(name));
 	assert.ok(!isBundledTheme("dark"));
 	assert.ok(!isBundledTheme("1337-custom")); // unknown sibling names are not ours to claim
@@ -119,6 +131,18 @@ test("chooseStartupTheme respects a persisted bundled palette when no env pin is
 	assert.equal(chooseStartupTheme("1337-ice"), "1337-ice");
 	assert.equal(chooseStartupTheme("1337-amber"), "1337-amber");
 	assert.equal(chooseStartupTheme("1337"), "1337");
+});
+
+test("a Pi palette choice wins over the config-file theme on reload", () => {
+	withConfigFile(JSON.stringify({ theme: "cyber" }));
+	delete process.env.PI_1337_THEME;
+	assert.equal(chooseStartupTheme("1337-skynet"), "1337-skynet");
+	assert.equal(chooseStartupTheme("1337-skynet-dark"), "1337-skynet-dark");
+	assert.equal(chooseStartupTheme("1337-cyberpunk-2077"), "1337-cyberpunk-2077");
+	assert.equal(chooseStartupTheme("1337-cyberpunk-2077-edgerunner"), "1337-cyberpunk-2077-edgerunner");
+	assert.equal(chooseStartupTheme("dark"), "1337-cyber", "config-file palette is the fallback when Pi has no bundled choice");
+	process.env.PI_1337_THEME = "on";
+	assert.equal(chooseStartupTheme("dark"), "1337", "explicit env enable suppresses the file's palette fallback");
 });
 
 test("chooseStartupTheme applies the default green over a foreign theme", () => {
@@ -193,10 +217,11 @@ test("hiddenThinkingLabel falls back to the config file, then to the default", (
 	assert.equal(hiddenThinkingLabel(), "∴ thinking");
 });
 
-test("envPalette honors a theme pinned in the config file", () => {
-	withConfigFile(JSON.stringify({ theme: "amber" }));
+test("config-file theme is a startup fallback rather than an env pin", () => {
+	withConfigFile(JSON.stringify({ theme: "cyberpunk-2077-edgerunner" }));
 	delete process.env.PI_1337_THEME;
-	assert.equal(envPalette(), "1337-amber");
+	assert.equal(envPalette(), undefined);
+	assert.equal(chooseStartupTheme("dark"), "1337-cyberpunk-2077-edgerunner");
 });
 
 test("isDisabled honors disable:true in the config file", () => {

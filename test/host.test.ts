@@ -34,7 +34,7 @@ test(`Pi ${hostVersion} loads the package and all palettes through its real reso
 		const themes = loader.getThemes();
 		assert.deepEqual(themes.diagnostics, []);
 		assert.deepEqual(themes.themes.map((theme) => theme.name).sort(), [
-			"1337", "1337-amber", "1337-cyber", "1337-fallout", "1337-ice", "1337-neon", "1337-skynet", "1337-split",
+			"1337", "1337-amber", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-fallout", "1337-ice", "1337-magma", "1337-neon", "1337-poison", "1337-skynet", "1337-skynet-dark",
 		]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

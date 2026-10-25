@@ -10,15 +10,19 @@ Keep the pure render logic separate from the Pi wiring.
 pi-1337/
 ├── package.json        # pi.extensions + pi.themes
 ├── themes/
-│   ├── 1337.json       # default green ramp (51 tokens, AA-tuned, syntax de-collided)
+│   ├── 1337.json       # 1985-inspired yellow-green phosphor + amber UI accents
 │   ├── 1337-amber.json   # amber CRT sibling      ┐
 │   ├── 1337-ice.json     # cool blue-white         │
 │   ├── 1337-cyber.json   # modern indigo-blue      ├ same 51-token contract, other hues
+│   ├── 1337-cyberpunk-2077.json # neon yellow + cyan-blue accents on black
+│   ├── 1337-cyberpunk-2077-edgerunner.json # muted red + yellow titles + cyan accent on burgundy-black
 │   ├── 1337-neon.json    # synthwave violet        │
-│   ├── 1337-split.json   # green + magenta gun     │
+│   ├── 1337-poison.json  # toxic green/orchid mix   │
+│   ├── 1337-magma.json   # molten coral/orange + cyan│
 │   ├── 1337-fallout.json # radioactive Pip-Boy lime │
-│   ├── 1337-skynet.json  # Terminator red-on-black ┘
-│   └── *.pi1337        # per-palette text spinner; Fallout/Skynet also opt into tint (not theme resources)
+│   ├── 1337-skynet.json  # Terminator 2 warm-white HUD on red-tinted black
+│   ├── 1337-skynet-dark.json # red-on-near-black sibling                      ┘
+│   └── *.pi1337        # per-palette spinner; both Cyberpunk variants, Fallout, and both Skynets opt into tint (not theme resources)
 ├── src/
 │   ├── index.ts        # wiring: events, /pi-1337 command, copy shortcut, apply/clear, theme switch, spinner timer
 │   ├── editor.ts       # FramedEditor (CustomEditor subclass) + setEditorComponent factory
@@ -205,8 +209,8 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   outside 60–500 ms. RGB overrides become typed color values; absent overrides
   use the active semantic accent. Invalid/missing profiles use the original
   90 ms braille default. A live theme switch resets the frame and restarts only
-  active, unpaused motion; it never creates a second timer. Skynet's crimson
-  `#d51f2a` pyramid uses its fixed three-cell right gutter and four-cell status
+  active, unpaused motion; it never creates a second timer. Both Skynet profiles
+  use the crimson `#d51f2a` pyramid with its fixed three-cell right gutter and four-cell status
   reservation; with autocomplete and only one content row, only its top triangle
   is shown so suggestion indices never shift. Other bundled profiles stay one-row.
 - **Always reversible.** Everything `apply()` changes, `clear()` restores:
@@ -273,10 +277,11 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   avatar, and requests a full redraw. `clear()` invalidates a queued refresh.
 - **Never stomp a persisted palette.** `applyTheme` targets
   `chooseStartupTheme(current)` (pure, in config.ts): an explicit `PI_1337_THEME`
-  pin wins; otherwise a bundled palette Pi restored from the user's settings
-  (e.g. `1337-ice` picked via `/settings`) is kept; only a foreign theme is
-  replaced by the default green. Forcing the default over a sibling palette
-  would also overwrite the user's persisted choice in Pi's settings.
+  palette pin wins; otherwise Pi's current bundled palette (e.g. `1337-ice`
+  picked via `/settings`) is kept. When Pi has no bundled choice, an unset env
+  uses the config-file palette as a startup fallback, then default green; an
+  explicit env `on` skips the file fallback. This preserves live Pi selections
+  across `/reload` without treating the config-file theme as a permanent pin.
   `/pi-1337` and shutdown both route through `clear()`, which also resets
   `working`/`chromeActive` and clears the spinner timer so a re-enable never inherits
   a frozen frame.
@@ -294,11 +299,12 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   and is added to the session walk in `formatCost`. All three keys are captured
   in the empty-footer factory. This extension only reads these keys; pi-persona
   owns them.
-- **Theme contract.** All eight `themes/*.json` define the same 51 tokens;
+- **Theme contract.** All twelve `themes/*.json` define the same 51 tokens;
   `theme.test.ts` enforces the set + valid color resolution for every palette,
   checks each file's `name` matches its filename, and applies the green
-  monochrome rule (amber family the only exception) to the default `1337.json`
-  only — the amber/ice/split siblings are intentionally other-hued. Also enforce
+  phosphor/amber-role rule to the default `1337.json` only — the amber/ice/
+  poison siblings are intentionally other-hued, Skynet uses a warm-white HUD, and
+  Skynet Dark retains its red family. Also enforce
   `toolDiffContext` contrast ≥4.5:1 on `toolSuccessBg`, not only `dim` contrast.
 - **Current host.** Develop and qualify only against the latest installed Pi
   release. Keep both Pi development packages pinned to that exact matched

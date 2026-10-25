@@ -20,12 +20,12 @@ test("default spinner and valid themed profiles retain fixed host-measured geome
 			assert.equal(profile.columns, Array.isArray(input.frames[0]) ? 3 : 1);
 			assert.ok(profile.frames.every((frame) => hostVisibleWidth(frame) === profile.columns));
 		}
-		for (const theme of ["1337", "1337-amber", "1337-ice", "1337-cyber", "1337-neon", "1337-split", "1337-fallout", "1337-skynet"]) {
+		for (const theme of ["1337", "1337-amber", "1337-ice", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-neon", "1337-poison", "1337-magma", "1337-fallout", "1337-skynet", "1337-skynet-dark"]) {
 			const sidecar = JSON.parse(readFileSync(new URL(`../themes/${theme}.pi1337`, import.meta.url), "utf8"));
 			const profile = parseSpinner(sidecar.spinner);
 			assert.ok(profile, `${theme}: bundled spinner profile parses`);
 			assert.ok(profile.frames.every((frame) => hostVisibleWidth(frame) === profile.columns), `${theme}: every bundled frame matches host width`);
-			if (theme === "1337-skynet") {
+			if (theme === "1337-skynet" || theme === "1337-skynet-dark") {
 				assert.equal(profile.height, 2);
 				assert.deepEqual(profile.frameRows(0), [" ▲ ", "△ △"]);
 				assert.deepEqual(profile.color, { kind: "rgb", r: 213, g: 31, b: 42 });

@@ -5,7 +5,7 @@
  * |---------|---------|---------|
  * | `PI_1337_POLISH`         | `on`         | Compact tool rows and diff previews; `off` restores host renderers. |
  * | `PI_1337_DISABLE`        | _(off)_      | Any non-empty value disables the extension entirely. |
- * | `PI_1337_THEME`          | `on`         | `off` keeps your current theme; `amber`/`ice`/`split` pick a palette; `on`/`green` = the default green. |
+ * | `PI_1337_THEME`          | `on`         | `off` keeps your current theme; `on` preserves a bundled Pi choice or uses green; `green` explicitly pins green. Palette aliases include `poison`, `magma`, `cyberpunk-2077`, `cyberpunk-2077-edgerunner`, and `skynet-dark`. |
  * | `PI_1337_THINKING_LABEL` | `∴ thinking` | Label for the collapsed thinking row. |
  * | `PI_1337_COPY_KEY`       | `alt+c`      | Shortcut that copies the input buffer as clean text. Empty disables it. |
  * | `PI_1337_BG`             | _(theme)_    | `on`/`auto` tints the terminal window background to the active palette's `void`; a `#rrggbb`/`#rgb` value forces that color; `off` leaves the terminal untouched. Unset defers to the theme's own `pi1337.background`; a set value overrides it. |
@@ -107,11 +107,15 @@ export const BUNDLED_THEMES = [
 	"1337",
 	"1337-amber",
 	"1337-ice",
-	"1337-split",
+	"1337-poison",
+	"1337-magma",
 	"1337-cyber",
+	"1337-cyberpunk-2077",
+	"1337-cyberpunk-2077-edgerunner",
 	"1337-neon",
 	"1337-fallout",
 	"1337-skynet",
+	"1337-skynet-dark",
 ] as const;
 
 /** Short aliases → registered theme ids. All are also selectable via `/settings`. */
@@ -119,13 +123,25 @@ const THEME_ALIASES: Record<string, string> = {
 	green: "1337",
 	amber: "1337-amber",
 	ice: "1337-ice",
-	split: "1337-split",
+	poison: "1337-poison",
+	magma: "1337-magma",
 	cyber: "1337-cyber",
 	blue: "1337-cyber",
+	"cyberpunk-2077": "1337-cyberpunk-2077",
+	"cyberpunk-2077-edgerunner": "1337-cyberpunk-2077-edgerunner",
 	neon: "1337-neon",
 	fallout: "1337-fallout",
 	skynet: "1337-skynet",
+	"skynet-dark": "1337-skynet-dark",
 };
+
+function paletteFrom(value: string | undefined): string | undefined {
+	const raw = value?.trim().toLowerCase();
+	if (!raw || raw === "on" || raw === "off") return undefined;
+	if (raw in THEME_ALIASES) return THEME_ALIASES[raw];
+	if (isBundledTheme(raw)) return raw;
+	return undefined;
+}
 
 export function isDisabled(): boolean {
 	return !!process.env.PI_1337_DISABLE?.trim() || configFileSettings().disable === true;
@@ -141,31 +157,39 @@ export function autoThemeEnabled(): boolean {
 }
 
 /** True when `name` is one of the palettes this package ships. */
-export function isBundledTheme(name: string | undefined): boolean {
+export function isBundledTheme(name: string | undefined): name is (typeof BUNDLED_THEMES)[number] {
 	return !!name && (BUNDLED_THEMES as readonly string[]).includes(name);
 }
 
 /**
- * The palette explicitly pinned via `PI_1337_THEME` (alias `green`/`amber`/
- * `ice`/`split` or a full id), or `undefined` when the var is unset, a plain
- * `on`/`off`, or unrecognized — i.e. when there is no explicit pin.
+ * The palette explicitly pinned via `PI_1337_THEME`, or `undefined` when the
+ * variable is unset, a plain `on`/`off`, or unrecognized. Config-file theme
+ * values are startup fallbacks, not explicit pins.
  */
 export function envPalette(): string | undefined {
-	const raw = (process.env.PI_1337_THEME ?? configFileSettings().theme)?.trim().toLowerCase();
-	if (!raw || raw === "on" || raw === "off") return undefined;
-	if (raw in THEME_ALIASES) return THEME_ALIASES[raw];
-	if (isBundledTheme(raw)) return raw;
-	return undefined;
+	return paletteFrom(process.env.PI_1337_THEME);
+}
+
+function configPalette(): string | undefined {
+	return paletteFrom(configFileSettings().theme);
 }
 
 /**
- * The palette to apply at session start, given the theme Pi restored from the
- * user's settings: an explicit env pin wins; otherwise a persisted bundled
- * palette (the user picked e.g. `1337-ice` via `/settings`) is respected;
- * otherwise the default green replaces the foreign theme.
+ * The palette to apply at session start: an explicit environment pin wins;
+ * otherwise Pi's current bundled palette is respected; otherwise a configured
+ * config-file palette seeds startup, followed by default green.
  */
 export function chooseStartupTheme(current: string | undefined): string {
-	return envPalette() ?? (isBundledTheme(current) ? (current as string) : THEME_NAME);
+	const pinned = envPalette();
+	if (pinned) return pinned;
+	// Pi's current bundled theme is its persisted /settings choice. The config
+	// file is a first-start fallback, so it must not override a later UI choice.
+	if (isBundledTheme(current)) return current;
+	// Any environment setting takes precedence over the config file, including
+	// `on` (default green) or an unrecognized value. With no env setting, allow
+	// the config-file palette to seed startup only when Pi has no bundled choice.
+	if (process.env.PI_1337_THEME === undefined) return configPalette() ?? THEME_NAME;
+	return THEME_NAME;
 }
 
 export function hiddenThinkingLabel(): string {
@@ -220,7 +244,7 @@ export function resolveSettings(): ResolvedSettings {
 		disable: isDisabled(),
 		polish: polishEnabled(),
 		autoTheme: autoThemeEnabled(),
-		theme: envPalette(),
+		theme: process.env.PI_1337_THEME === undefined ? configPalette() : envPalette(),
 		thinkingLabel: hiddenThinkingLabel(),
 		copyKey: copyShortcut(),
 		background: backgroundEnv(),

@@ -1,9 +1,9 @@
 {
   "name": "pi-1337",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
-  "description": "Eight vivid themes for Pi with a framed editor, compact tool views, theme-aware diffs, and configurable text spinners.",
+  "description": "Twelve vivid themes for Pi with a framed editor, compact tool views, theme-aware diffs, and configurable text spinners.",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -25,6 +25,7 @@
     "src",
     "themes",
     "docs",
+    "assets/banner.png",
     "README.md"
   ],
   "scripts": {
@@ -42,6 +43,11 @@
     "@types/node": "^22.0.0",
     "tsx": "^4.23.12",
     "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "@earendil-works/pi-coding-agent@1.4.0": {
+      "undici": "8.12.2"
+    }
   },
   "engines": {
     "node": ">=22.19.0"

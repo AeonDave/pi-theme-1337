@@ -60,15 +60,52 @@ function contrastRatio(a: string, b: string): number {
 	return ((lighter ?? 0) + 0.05) / ((darker ?? 0) + 0.05);
 }
 
+function rgbChannels(hex: string): [number, number, number] {
+	return [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)) as [number, number, number];
+}
+
+function hslSaturation(hex: string): number {
+	const [r8, g8, b8] = rgbChannels(hex);
+	const [r, g, b] = [r8, g8, b8].map((channel) => channel / 255);
+	const max = Math.max(r ?? 0, g ?? 0, b ?? 0);
+	const min = Math.min(r ?? 0, g ?? 0, b ?? 0);
+	const lightness = (max + min) / 2;
+	return max === min ? 0 : (max - min) / (1 - Math.abs(2 * lightness - 1));
+}
+
+function hslHue(hex: string): number {
+	const [r8, g8, b8] = rgbChannels(hex);
+	const [r, g, b] = [r8, g8, b8].map((channel) => channel / 255);
+	const max = Math.max(r ?? 0, g ?? 0, b ?? 0);
+	const min = Math.min(r ?? 0, g ?? 0, b ?? 0);
+	const delta = max - min;
+	if (delta === 0) return 0;
+	const hue = max === r
+		? 60 * (((g ?? 0) - (b ?? 0)) / delta % 6)
+		: max === g
+			? 60 * (((b ?? 0) - (r ?? 0)) / delta + 2)
+			: 60 * (((r ?? 0) - (g ?? 0)) / delta + 4);
+	return (hue + 360) % 360;
+}
+
+function hueDistance(a: number, b: number): number {
+	const direct = Math.abs(a - b);
+	return Math.min(direct, 360 - direct);
+}
+
 test("the bundled palettes ship", () => {
 	assert.deepEqual(files.sort(), [
 		"1337-amber.json",
 		"1337-cyber.json",
+		"1337-cyberpunk-2077-edgerunner.json",
+		"1337-cyberpunk-2077.json",
 		"1337-fallout.json",
 		"1337-ice.json",
+		"1337-magma.json",
 		"1337-neon.json",
+		"1337-poison.json",
+		"1337-skynet-dark.json",
 		"1337-skynet.json",
-		"1337-split.json",
 		"1337.json",
 	]);
 });
@@ -93,7 +130,7 @@ test("all palettes satisfy the installed host's published top-level theme schema
 });
 
 test("bundled sidecars retain tint without shipping avatars or image assets", () => {
-	for (const name of ["1337-fallout", "1337-skynet"]) {
+	for (const name of ["1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-fallout", "1337-skynet", "1337-skynet-dark"]) {
 		const extra = JSON.parse(readFileSync(join(themesDir, `${name}.pi1337`), "utf8")) as { background?: string; avatar?: unknown };
 		assert.equal(extra.background, "on");
 		assert.equal(extra.avatar, undefined, `${name}: bundled themes stay image-free`);
@@ -124,35 +161,99 @@ for (const [file, theme] of themes) {
 	});
 }
 
-test("the default 1337 palette stays monochrome green: amber is the only deviation", () => {
-	// Every var is either an amber/caution accent or sits in the green ramp (green
-	// channel dominant). Guards against an off-palette color sneaking into the
-	// flagship theme. The amber/ice/split siblings are intentionally other-hued
-	// and only bound by the token contract above.
-	const vars = (themes.get("1337.json") as Theme).vars ?? {};
-	const allowedNonGreen = new Set(["amber", "caution", "errBg"]);
+test("the default 1337 palette stays green phosphor with mapped amber UI exceptions", () => {
+	const theme = themes.get("1337.json") as Theme;
+	const vars = theme.vars ?? {};
+	// Only these named vars may leave the green ramp; their approved semantic
+	// roles are checked below so a new amber value cannot leak into body/syntax.
+	const allowedNonGreen = new Set(["accent", "amber", "caution", "errBg"]);
 	for (const [name, value] of Object.entries(vars)) {
 		if (allowedNonGreen.has(name) || typeof value !== "string" || !HEX.test(value)) continue;
-		const r = parseInt(value.slice(1, 3), 16);
-		const g = parseInt(value.slice(3, 5), 16);
-		const b = parseInt(value.slice(5, 7), 16);
+		const [r, g, b] = rgbChannels(value);
 		assert.ok(g >= r && g >= b, `var ${name} (${value}) is not green-dominant`);
+	}
+	for (const [variable, roles] of Object.entries({
+		accent: ["accent", "customMessageLabel", "mdLink", "mdListBullet", "syntaxKeyword"],
+		amber: ["error", "toolDiffRemoved"],
+		caution: ["warning", "syntaxNumber", "bashMode"],
+		errBg: ["toolErrorBg"],
+	})) {
+		for (const role of roles) assert.equal(theme.colors[role], variable, `${role} is the mapped ${variable} exception`);
+	}
+	assert.ok(hslHue(resolveColor(theme, "text")) >= 75 && hslHue(resolveColor(theme, "text")) <= 130, "base CRT body stays yellow-green phosphor");
+	assert.ok(hslHue(resolveColor(theme, "accent")) >= 30 && hslHue(resolveColor(theme, "accent")) <= 65, "base UI accent stays amber/gold");
+	for (const role of ["syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation"]) {
+		const hue = hslHue(resolveColor(theme, role));
+		assert.ok((hue >= 25 && hue <= 65) || (hue >= 75 && hue <= 155), `${role} hue ${hue.toFixed(1)} stays in the green/amber CRT family`);
 	}
 });
 
-test("every palette body color stays vivid: broad RGB range and at least 60% HSL saturation", () => {
+test("the default CRT palette and Poison retain distinct green families and accents", () => {
+	const crt = themes.get("1337.json") as Theme;
+	const poison = themes.get("1337-poison.json") as Theme;
+	const crtBodyHue = hslHue(resolveColor(crt, "text"));
+	const poisonBodyHue = hslHue(resolveColor(poison, "text"));
+	assert.ok(crtBodyHue >= 75 && crtBodyHue <= 130, "default body remains yellow-green phosphor");
+	assert.ok(poisonBodyHue >= 125 && poisonBodyHue <= 175, "Poison body remains emerald-green");
+	assert.ok(hueDistance(crtBodyHue, poisonBodyHue) >= 18, "default and Poison body hues stay perceptibly distinct");
+	const crtAccentHue = hslHue(resolveColor(crt, "accent"));
+	const poisonAccentHue = hslHue(resolveColor(poison, "accent"));
+	assert.ok(crtAccentHue >= 30 && crtAccentHue <= 65, "default accent remains amber/gold");
+	assert.ok(poisonAccentHue >= 260 && poisonAccentHue <= 350, "Poison accent remains orchid/violet");
+	assert.ok(hueDistance(crtAccentHue, poisonAccentHue) >= 80, "default and Poison accents stay in separate hue families");
+});
+
+test("the eleven chromatic palettes stay vivid: broad RGB range and at least 60% HSL saturation", () => {
 	for (const [file, theme] of themes) {
+		if (file === "1337-skynet.json") continue; // Skynet follows Termovision's white HUD on red-tinted black.
 		const hex = resolveColor(theme, "text");
-		const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+		const channels = rgbChannels(hex);
 		const range = Math.max(...channels) - Math.min(...channels);
-		const [r, g, b] = channels.map((channel) => channel / 255);
-		const max = Math.max(r ?? 0, g ?? 0, b ?? 0);
-		const min = Math.min(r ?? 0, g ?? 0, b ?? 0);
-		const lightness = (max + min) / 2;
-		const saturation = max === min ? 0 : (max - min) / (1 - Math.abs(2 * lightness - 1));
 		assert.ok(range >= 85, `${file}: body ${hex} has only ${range} RGB channel range (<85)`);
-		assert.ok(saturation >= 0.6, `${file}: body ${hex} has only ${(saturation * 100).toFixed(1)}% HSL saturation (<60%)`);
+		assert.ok(hslSaturation(hex) >= 0.6, `${file}: body ${hex} has only ${(hslSaturation(hex) * 100).toFixed(1)}% HSL saturation (<60%)`);
 	}
+});
+
+test("Skynet follows the Termovision HUD color hierarchy", () => {
+	const theme = themes.get("1337-skynet.json") as Theme;
+	for (const role of ["text", "toolOutput", "mdHeading", "toolTitle", "userMessageText"]) {
+		const body = rgbChannels(resolveColor(theme, role));
+		assert.ok(Math.min(...body) >= 180, `${role} stays bright and near-white`);
+		assert.ok(body[0] >= body[1] && body[1] >= body[2] && body[0] - body[2] <= 70, `${role} keeps a restrained warm-white tint`);
+	}
+
+	const accentHex = resolveColor(theme, "accent");
+	const [red, green, blue] = rgbChannels(accentHex);
+	assert.ok(red >= 180 && red - green >= 70 && red - blue >= 70, `accent ${accentHex} remains a vivid red HUD cue`);
+	assert.ok(hslSaturation(accentHex) >= 0.6, `accent ${accentHex} remains saturated`);
+
+	for (const role of ["void", "panel", "selectedBg", "userMessageBg", "customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg"]) {
+		const hex = resolveColor(theme, role);
+		const [r, g, b] = rgbChannels(hex);
+		assert.ok(Math.max(r, g, b) <= 128, `${role} ${hex} stays a dark HUD surface`);
+		assert.ok(r >= g && r >= b, `${role} ${hex} keeps the red-tinted-black palette identity`);
+	}
+	const border = rgbChannels(resolveColor(theme, "border"));
+	assert.ok(border[0] >= border[1] && border[0] >= border[2], "HUD borders stay in the crimson family");
+});
+
+test("Skynet Dark preserves the red-on-near-black variant and shares the HUD loader tint", () => {
+	const theme = themes.get("1337-skynet-dark.json") as Theme;
+	const bodyHex = resolveColor(theme, "text");
+	const [bodyRed, bodyGreen, bodyBlue] = rgbChannels(bodyHex);
+	assert.ok(bodyRed - bodyGreen >= 70 && bodyRed - bodyBlue >= 70, `body ${bodyHex} stays visibly red`);
+	assert.ok(hslSaturation(bodyHex) >= 0.6, `body ${bodyHex} stays saturated`);
+	for (const role of ["void", "panel", "selectedBg"]) {
+		const hex = resolveColor(theme, role);
+		const [r, g, b] = rgbChannels(hex);
+		assert.ok(Math.max(r, g, b) <= 80, `${role} ${hex} stays near-black`);
+		assert.ok(r >= g && r >= b, `${role} ${hex} stays red-tinted`);
+	}
+
+	const mainSidecar = JSON.parse(readFileSync(join(themesDir, "1337-skynet.pi1337"), "utf8")) as { background?: string; spinner?: unknown };
+	const darkSidecar = JSON.parse(readFileSync(join(themesDir, "1337-skynet-dark.pi1337"), "utf8")) as { background?: string; spinner?: unknown };
+	assert.equal(darkSidecar.background, "on");
+	assert.deepEqual(darkSidecar.spinner, mainSidecar.spinner, "dark Skynet keeps the same crimson pyramid profile");
 });
 
 test("palette readability, semantic separation, and role contrast stay measured", () => {

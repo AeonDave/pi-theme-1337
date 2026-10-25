@@ -11,20 +11,26 @@ timer.
 | `1337-amber` | ASCII baton | 120 ms | 1 |
 | `1337-ice` | Quarter circles: `◴ ◷ ◶ ◵` | 150 ms | 1 |
 | `1337-cyber` | Pulse: `· • ● •` | 140 ms | 1 |
+| `1337-cyberpunk-2077` | Electric ladder bars: `▁▃▅` → `▃▅▇` → `▅▇▁` → `▇▁▃` → `▅▂▆` → `▃▅▇` | 140 ms | 3 |
+| `1337-cyberpunk-2077-edgerunner` | Electric ladder bars: `▁▃▅` → `▃▅▇` → `▅▇▁` → `▇▁▃` → `▅▂▆` → `▃▅▇` | 140 ms | 3 |
 | `1337-neon` | Diamonds: `◇ ◈ ◆ ◈` | 160 ms | 1 |
-| `1337-split` | Half circles: `◐ ◓ ◑ ◒` | 140 ms | 1 |
+| `1337-poison` | Half circles: `◐ ◓ ◑ ◒` | 140 ms | 1 |
+| `1337-magma` | Heat bars: `▁▃▆` | 120 ms | 3 |
 | `1337-fallout` | Pixel rotation: `▖ ▘ ▝ ▗` | 150 ms | 1 |
 | `1337-skynet` | Pyramid: one triangle above two | 180 ms | 3 |
+| `1337-skynet-dark` | Pyramid: one triangle above two | 180 ms | 3 |
 
-Skynet activates one triangle at a time:
+Both Skynet profiles activate one triangle at a time:
 
 ```text
  ▲       △       △
 △ △     ▲ △     △ ▲
 ```
 
-Skynet's crimson pyramid is `#d51f2a`; all other profiles retain their palette's
-semantic accent. The override belongs only to the sidecar, not the theme palette.
+Both Skynet profiles use the crimson `#d51f2a` pyramid; all other profiles
+retain their palette's semantic accent. Cyberpunk 2077 uses a cyan-blue accent
+(`#52c9ff`), and Edgerunner uses a cyan accent (`#00e6e6`). The explicit color
+override belongs only to the Skynet sidecars, not either theme palette.
 
 ## Configure a profile
 
@@ -50,7 +56,7 @@ profiles fall back to the standard braille spinner. The interval defaults to
 90 ms and must be between 60 and 500 ms.
 
 A two-row animation reserves its indicator width plus one cell on the status
-row (four cells for Skynet), even when idle or waiting. This reduces the status
+row (four cells for both Skynet profiles), even when idle or waiting. This reduces the status
 layout budget without changing the input
 viewport. When there is one input row and no menu, the lower art occupies the
 right side of the existing status row. With at least two content rows, it uses

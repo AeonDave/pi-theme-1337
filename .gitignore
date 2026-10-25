@@ -4,6 +4,7 @@ node_modules/
 # Stray artifacts
 nul
 *.log
+/work/
 
 # OS / editor cruft
 .DS_Store
