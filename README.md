@@ -15,6 +15,11 @@ pi-1337 combines a set of phosphor-inspired themes with an extension that moves 
 The extension changes presentation only. It leaves Pi's editor behavior, tool execution, prompts, and third-party custom tool renderers in place.
 When pi-persona is installed, the frame can show its persona and agent count; the two packages work independently.
 
+Edit previews use Pi's recorded diff, with separate changed spans emphasized inside
+paired replacement lines. Collapsed previews show up to 16 rows; expand for the full
+diff. Uneven change groups and large lines keep line colors without span emphasis.
+Write previews show submitted file content.
+
 ## Palettes
 
 | Theme | Character |

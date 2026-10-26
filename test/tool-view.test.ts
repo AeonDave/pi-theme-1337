@@ -372,6 +372,40 @@ test("replacement lines emphasize the changed middle without dependencies", () =
 	assert.ok(rows.some(row => row.includes(theme.bold("green"))));
 });
 
+test("replacement rows emphasize disjoint spans rather than their unchanged middle", () => {
+	const rows = output("edit", "ok", {}, { diff: "-1 red + stable + small\n+1 green + stable + large" }).render(100);
+	for (const word of ["red", "small", "green", "large"]) assert.ok(rows.some(row => row.includes(theme.bold(word))), word);
+	assert.ok(rows.every(row => !row.includes(theme.bold("stable"))));
+	assert.ok(rows.every(row => !/\x1b\[1m[^\x1b]*stable/.test(row)));
+});
+
+test("replacement groups pair by position after line shifts and never across context or uneven groups", () => {
+	const shifted = output("edit", "ok", {}, { diff: "+1 insertion\n 1 anchor\n-2 const old = 1;\n+3 const new = 1;" }).render(100);
+	for (const word of ["old", "new"]) assert.ok(shifted.some(row => row.includes(theme.bold(word))), word);
+	for (const diff of ["-2 old\n 3 context\n+2 new", "-1 old\n+1 new\n+2 extra", "-1 old\n ...\n+1 new"]) {
+		assert.ok(output("edit", "ok", {}, { diff }).render(100).every(row => !row.includes("\x1b[1m")), diff);
+	}
+});
+
+test("changed spans survive wrapping and sanitization without bolding truncation markers", () => {
+	const diff = "-1 old + stable + red👩‍💻\n+1 new\u001b[2J + stable + green👨‍💻";
+	const component = output("edit", "ok", { expanded: true, outputPad: 0 }, { diff });
+	const rows = component.render(12);
+	assert.ok(rows.every(row => visibleWidth(row) <= 12));
+	const bolded = rows.flatMap(row => Array.from(row.matchAll(/\x1b\[1m([^\x1b]*)\x1b\[22m/g), match => match[1])).join("");
+	assert.equal(bolded, "oldred👩‍💻newgreen👨‍💻");
+	const clipped = output("edit", "ok", {}, { diff: "-1 abcdefghij\n+1 uvwxyzabcd" }).render(10);
+	assert.ok(clipped.every(row => !/\x1b\[1m[^\x1b]*…/.test(row)));
+});
+
+test("clipped preview groups and line bodies never invent an intra-line pairing", () => {
+	const prefix = Array.from({ length: 14 }, (_, i) => ` ${i + 1} context`).join("\n");
+	const cutGroup = output("edit", "ok", {}, { diff: `${prefix}\n-15 old\n+15 new\n+16 extra` }).render(100);
+	assert.ok(cutGroup.every(row => !row.includes("\x1b[1m")));
+	const cutBody = output("edit", "ok", {}, { diff: `-1 ${"a".repeat(9000)}\n+1 new` }).render(100);
+	assert.ok(cutBody.every(row => !row.includes("\x1b[1m")));
+});
+
 test("all rows fit actual installed Pi ruler at widths 0..120, Unicode and pathological output padding", () => {
 	const text = "界 👩‍💻 का မြန်မာ é ✓ \x1b[2J\u202e safe";
 	for (const outputPad of [0, 1, 8, 200]) {

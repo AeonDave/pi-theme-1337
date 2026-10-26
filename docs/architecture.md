@@ -21,6 +21,7 @@ Pi extension API ─> index.ts ─> editor.ts ─> frame.ts
 | `src/format.ts`, `src/subagents.ts` | Pure label, context, cost, and live-agent formatting. |
 | `src/width.ts` | Shared width measurement seam used by render modules. |
 | `src/tool-view.ts`, `src/tool-adapter.ts` | Compact presentation for tool calls, results, and diffs. |
+| `src/diff-spans.ts` | Bounded comparison of sanitized replacement bodies. |
 | `src/avatar.ts`, `src/background.ts`, `src/spinner.ts` | Pure parsing/layout and value helpers for optional presentation settings. |
 | `src/redraw-guard.ts` | Pass-through stderr observation and coalesced redraw repair while active. |
 
@@ -35,6 +36,20 @@ Status values are captured from Pi and extension status sources outside the rend
 ## Tool views
 
 The extension registers renderers for compact tool headers, output previews, and edit diffs. This changes transcript presentation only; it does not alter tool schemas, arguments, prompts, execution, or results. Existing third-party renderers remain available, and original host renderers return when the redesign is disabled. `PI_1337_POLISH=off` keeps the host's tool views while retaining the framed editor.
+
+Edit previews use only recorded result diffs; write previews show submitted content.
+`diff-spans.ts` compares words and punctuation with a longest common subsequence,
+then refines each changed span's edges at grapheme boundaries. Common text between
+separate edits keeps its normal weight. Equal-sized, contiguous removed/added groups
+pair by position, since old/new line numbers diverge after insertions. Context and
+omitted-hunk markers end a group; uneven and incomplete preview groups/bodies keep
+full-line semantic colors without intra-line emphasis.
+
+Comparison is capped at 8,192 UTF-16 units per body, 256 tokens per side and 65,536
+matrix cells (~128 KiB). Over-budget pairs retain line colors. Unified rows preserve
+space for code at narrow widths; bold spans survive wrapping and clipping without
+styling the renderer's truncation marker. Rendering uses the current host's ruler,
+the active theme's semantic colors, and the existing expansion and toggle contracts.
 
 ## Lifecycle and host behavior
 

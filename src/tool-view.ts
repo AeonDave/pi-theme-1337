@@ -2,6 +2,7 @@
 import type { Theme, ThemeBg, ThemeColor, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { sanitizeInlineText } from "./format.ts";
+import { changedSpans, type DiffSpan } from "./diff-spans.ts";
 import { truncateToWidth, visibleWidth } from "./width.ts";
 
 type CallContext = Parameters<NonNullable<ToolRenderers["renderCall"]>>[2];
@@ -12,7 +13,8 @@ type Row = {
 	background?: ThemeBg;
 	dot?: ThemeColor;
 	wrap?: boolean;
-	emphasis?: { start: number; end: number };
+	incomplete?: boolean;
+	emphasis?: DiffSpan[];
 	highlight?: (text: string, offset: number, theme: Theme) => string | undefined;
 };
 const BUILTINS = new Set(["bash", "read", "grep", "find", "ls", "edit", "write"]);
@@ -177,31 +179,30 @@ function diffRow(text: string, wrap: boolean): Row {
 	};
 }
 
-/** Match replacement rows by their authoritative line number, not the edit arguments. */
-function emphasizeReplacements(rows: Row[]): void {
-	const removed = new Map<string, Row>();
+/** Old/new line numbers use different coordinate spaces after insertions/deletions. */
+function emphasizeReplacements(rows: Row[], complete: boolean): void {
+	let removed: Array<{ row: Row; offset: number }> = [];
+	let added: Array<{ row: Row; offset: number }> = [];
+	const flush = () => {
+		// Uneven groups lack an unambiguous positional pairing. Keep full-line color.
+		if (removed.length === added.length) for (let i = 0; i < removed.length; i++) {
+			const before = removed[i]!;
+			const after = added[i]!;
+			if (before.row.incomplete || after.row.incomplete) continue;
+			const spans = changedSpans(before.row.text.slice(before.offset), after.row.text.slice(after.offset));
+			before.row.emphasis = spans.before.map(span => ({ start: span.start + before.offset, end: span.end + before.offset }));
+			after.row.emphasis = spans.after.map(span => ({ start: span.start + after.offset, end: span.end + after.offset }));
+		}
+		removed = [];
+		added = [];
+	};
 	for (const row of rows) {
-		const match = /^ {2,}(\d+) ([+-]) (.*)$/s.exec(row.text);
-		if (!match) continue;
-		if (match[2] === "-") { removed.set(match[1], row); continue; }
-		const before = removed.get(match[1]);
-		if (!before) continue;
-		const bodyStart = row.text.length - match[3].length;
-		const oldStart = /^ {2,}\d+ - /.exec(before.text)![0].length;
-		const old = Array.from(GRAPHEMES.segment(before.text.slice(oldStart)), item => item.segment);
-		const next = Array.from(GRAPHEMES.segment(match[3]), item => item.segment);
-		let left = 0;
-		let right = 0;
-		while (left < Math.min(old.length, next.length) && old[left] === next[left]) left++;
-		while (right < Math.min(old.length, next.length) - left && old[old.length - right - 1] === next[next.length - right - 1]) right++;
-		const range = (parts: string[], offset: number) => ({
-			start: offset + parts.slice(0, left).join("").length,
-			end: offset + parts.slice(0, parts.length - right).join("").length,
-		});
-		before.emphasis = range(old, oldStart);
-		row.emphasis = range(next, bodyStart);
-		removed.delete(match[1]);
+		const match = /^ {2,}\d+ ([+-]) /.exec(row.text);
+		if (!match) { flush(); continue; }
+		if (match[1] === "-" && added.length) flush();
+		(match[1] === "-" ? removed : added).push({ row, offset: match[0].length });
 	}
+	if (complete) flush(); // The preview may end halfway through a larger change group.
 }
 
 function fileRows(name: string, args: Record<string, unknown>, result: ToolResult, expanded: boolean, hint: string, highlightCode?: (code: string, path: string) => string[]): Row[] | undefined {
@@ -247,11 +248,11 @@ function fileRows(name: string, args: Record<string, unknown>, result: ToolResul
 							} catch { return undefined; }
 						},
 					});
-				} else rows.push(diffRow(`${gutter}${body}`, expanded));
+				} else rows.push({ ...diffRow(`${gutter}${body}`, expanded), incomplete: cap < end });
 			} else rows.push(diffRow(content, expanded));
 		} else rows.push({ text: `+${count} ${content}`, color: "toolDiffAdded", background: "toolSuccessBg", wrap: expanded });
 	}
-	if (name === "edit") emphasizeReplacements(rows);
+	if (name === "edit") emphasizeReplacements(rows, count === rows.length);
 	const summary = name === "write" ? `File-content preview: ${linesLabel(count)}` : `Added ${linesLabel(added)}, removed ${linesLabel(removed)}`;
 	const remainder = count - rows.length;
 	rows.unshift({ text: `└ ${summary}`, color: "dim" });
@@ -289,10 +290,18 @@ function* wrap(text: string, room: number): Generator<{ text: string; offset: nu
 
 function paint(row: Row, text: string, offset: number, room: number, theme: Theme): string {
 	let decorated = text;
-	if (row.emphasis) {
-		const start = Math.max(0, row.emphasis.start - offset);
-		const end = Math.min(text.length, row.emphasis.end - offset);
-		if (end > start) decorated = text.slice(0, start) + theme.bold(text.slice(start, end)) + text.slice(end);
+	if (row.emphasis?.length) {
+		const sourceLength = !row.wrap && text !== row.text && text.endsWith("…") ? text.length - 1 : text.length;
+		let cursor = 0;
+		decorated = "";
+		for (const span of row.emphasis) {
+			const start = Math.max(0, span.start - offset);
+			const end = Math.min(sourceLength, span.end - offset);
+			if (end <= start) continue;
+			decorated += text.slice(cursor, start) + theme.bold(text.slice(start, end));
+			cursor = end;
+		}
+		decorated += text.slice(cursor);
 	}
 	decorated = row.dot && text.startsWith("●")
 		? theme.fg(row.dot, "●") + theme.fg(row.color, text.slice(1))

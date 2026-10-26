@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Emphasize separate changed spans in recorded edit diffs while preserving common
+  text between edits, Unicode graphemes, semantic colors and narrow-width layout.
+- Pair replacements within contiguous change groups after line-number shifts;
+  keep uneven, clipped or over-budget groups as full-line colored previews.
+
 ## [0.4.0] - 2026-10-25
 
 ### Themes
