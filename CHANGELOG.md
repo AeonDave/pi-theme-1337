@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-12
+
+- Rename the package to `pi-theme-1337` and the command to `/theme-1337`;
+  remove the old `/pi-1337` command.
+
 ## [0.4.1] - 2026-11-12
 
 - Qualify development dependencies and test fixtures against Pi 1.5.1.

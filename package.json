@@ -1,6 +1,6 @@
 {
-  "name": "pi-1337",
-  "version": "0.4.1",
+  "name": "pi-theme-1337",
+  "version": "0.4.2",
   "private": false,
   "type": "module",
   "description": "Twelve vivid themes for Pi with a framed editor, compact tool views, theme-aware diffs, and configurable text spinners.",

@@ -24,7 +24,7 @@ pi-1337/
 │   ├── 1337-skynet-dark.json # red-on-near-black sibling                      ┘
 │   └── *.pi1337        # per-palette spinner; both Cyberpunk variants, Fallout, and both Skynets opt into tint (not theme resources)
 ├── src/
-│   ├── index.ts        # wiring: events, /pi-1337 command, copy shortcut, apply/clear, theme switch, spinner timer
+│   ├── index.ts        # wiring: events, /theme-1337 command, copy shortcut, apply/clear, theme switch, spinner timer
 │   ├── editor.ts       # FramedEditor (CustomEditor subclass) + setEditorComponent factory
 │   ├── frame.ts        # pure: frameEditor / layoutRow / isRuleLine (drops Pi's rules, builds the rounded box)
 │   ├── format.ts       # pure: shortCwd / cleanModel / formatContext
@@ -282,7 +282,7 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
   uses the config-file palette as a startup fallback, then default green; an
   explicit env `on` skips the file fallback. This preserves live Pi selections
   across `/reload` without treating the config-file theme as a permanent pin.
-  `/pi-1337` and shutdown both route through `clear()`, which also resets
+  `/theme-1337` and shutdown both route through `clear()`, which also resets
   `working`/`chromeActive` and clears the spinner timer so a re-enable never inherits
   a frozen frame.
 - **Clean-copy shortcut.** `PI_1337_COPY_KEY` (default `alt+c`, empty = off)
@@ -320,7 +320,7 @@ npm run test:parity   # a pi checkout at ../pi; skips without one
 PI_TUI="$(npm root -g)/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.js" \
   npm run test:parity # …but prefer the bundle you actually run against
 pi -e .   # manual: narrow/wide widths (frame centers, never overflows),
-          # type while streaming (cursor + spinner), /pi-1337 restores default chrome
+          # type while streaming (cursor + spinner), /theme-1337 restores default chrome
 ```
 
 `test:parity` covers the one thing the unit tests structurally cannot: they

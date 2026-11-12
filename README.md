@@ -1,16 +1,16 @@
-# pi-1337
+# pi-theme-1337
 
 ![Illustration of Phosphor, Poison, Cyberpunk 2077, and Edgerunner palettes](assets/banner.png)
 
 **Twelve dark palettes and a framed terminal editor for [Pi](https://github.com/earendil-works/pi-mono).**
-pi-1337 combines diverse CRT, cyberpunk, synthwave, and HUD-inspired palettes with an extension that moves the editor and useful session status into a centered frame.
+The pi-theme-1337 package combines diverse CRT, cyberpunk, synthwave, and HUD-inspired palettes with an extension that moves the editor and useful session status into a centered frame.
 
 ## What it adds
 
 - A centered, rounded editor with a prompt marker, activity spinner, and status for the workspace, branch, session, context, estimated cost, model, agents, and persona.
 - Twelve Pi themes that you can choose in `/settings`; Pi keeps the selected bundled theme across restarts.
 - Compact tool transcript rows and theme-aware edit previews, with errors visible while collapsed.
-- A reversible `/pi-1337` toggle and a clean-buffer copy shortcut (`alt+c` by default).
+- A reversible `/theme-1337` toggle and a clean-buffer copy shortcut (`alt+c` by default).
 
 The extension changes presentation only. It leaves Pi's editor behavior, tool execution, prompts, and third-party custom tool renderers in place.
 When pi-persona is installed, the frame can show its persona and agent count; the two packages work independently.
@@ -54,7 +54,7 @@ Requires Pi and Node.js 22.19 or later.
 ## Use
 
 - Choose `1337` or any `1337-*` palette in `/settings`. The choice persists across restarts and `/reload`.
-- Run `/pi-1337` to turn the editor redesign off or on.
+- Run `/theme-1337` to turn the editor redesign off or on.
 - Press `alt+c` to copy the editor's logical text without frame characters or added row breaks.
 
 `PI_1337_THEME` can explicitly pin a palette, for example `PI_1337_THEME=cyber`. Use `PI_1337_THEME=off` to keep Pi's current theme while using the framed editor.

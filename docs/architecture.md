@@ -53,7 +53,7 @@ the active theme's semantic colors, and the existing expansion and toggle contra
 
 ## Lifecycle and host behavior
 
-`/pi-1337` and shutdown restore the presentation changes made by the extension, including the editor, footer, spinner visibility, theme when still owned by the extension, optional widget, and any terminal tint. The extension only applies UI changes in Pi's interactive TUI mode; RPC, JSON, and print modes do not acquire the redesign or animation timer.
+`/theme-1337` and shutdown restore the presentation changes made by the extension, including the editor, footer, spinner visibility, theme when still owned by the extension, optional widget, and any terminal tint. The extension only applies UI changes in Pi's interactive TUI mode; RPC, JSON, and print modes do not acquire the redesign or animation timer.
 
 Pi owns notices, dialogs, widgets, retry indicators, compaction indicators, and other status channels. The extension keeps these host channels intact and does not replace them with a footer status row.
 

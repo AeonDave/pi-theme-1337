@@ -14,7 +14,7 @@
  *
  * All on documented primitives: `setTheme`, `setEditorComponent`, `setFooter`,
  * `setWorkingVisible`, `setHiddenThinkingLabel`, `registerShortcut`. Everything is
- * restored on `/pi-1337` off or shutdown. TUI-only; a no-op elsewhere.
+ * restored on `/theme-1337` off or shutdown. TUI-only; a no-op elsewhere.
  */
 
 import { readFileSync, statSync } from "node:fs";
@@ -694,11 +694,10 @@ export default function pi1337(pi: ExtensionAPI) {
 		clear(ctx);
 	});
 
-	// Command name is `pi-1337` (not `1337`) so it never shadows another tool's
-	// `/1337`. The bundled THEME is still named `1337` (picked via /settings); only
-	// this slash command is namespaced.
-	pi.registerCommand("pi-1337", {
-		description: "Toggle the pi-1337 phosphor redesign (theme + framed editor)",
+	// The toggle is namespaced separately from the bundled `1337` palette, which
+	// remains available in /settings.
+	pi.registerCommand("theme-1337", {
+		description: "Toggle the pi-theme-1337 redesign (theme + framed editor)",
 		handler: async (_args, ctx) => {
 			enabled = !enabled;
 			if (enabled) apply(ctx);

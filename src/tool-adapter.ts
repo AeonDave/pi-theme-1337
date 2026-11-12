@@ -34,7 +34,7 @@ const empty: Component = { render: () => [], invalidate() {} };
 
 /**
  * Pi fixes the shell when a row is constructed. Keep it self-owned forever and
- * switch the *contents*, not the descriptor, when /pi-1337 changes state.
+ * switch the *contents*, not the descriptor, when /theme-1337 changes state.
  *
  * Both lanes receive every host callback, even when hidden: native renderers may
  * need their final callback to stop a partial-result timer. Each lane has its own
