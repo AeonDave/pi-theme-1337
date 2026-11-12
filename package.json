@@ -1,6 +1,6 @@
 {
   "name": "pi-1337",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": false,
   "type": "module",
   "description": "Twelve vivid themes for Pi with a framed editor, compact tool views, theme-aware diffs, and configurable text spinners.",
@@ -38,14 +38,14 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.4.0",
-    "@earendil-works/pi-tui": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.5.1",
+    "@earendil-works/pi-tui": "1.5.1",
     "@types/node": "^22.0.0",
     "tsx": "^4.23.12",
     "typescript": "^5.6.0"
   },
   "overrides": {
-    "@earendil-works/pi-coding-agent@1.4.0": {
+    "@earendil-works/pi-coding-agent@1.5.1": {
       "undici": "8.12.2"
     }
   },

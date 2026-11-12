@@ -21,7 +21,7 @@ function palette() {
 }
 const theme = palette().theme;
 function context(patch: Partial<Context> = {}): Context {
-	return { args: {}, toolCallId: "test", invalidate() {}, lastComponent: undefined, state: {}, cwd: "/work", executionStarted: true, argsComplete: true, isPartial: false, expanded: false, showImages: true, isError: false, durationMs: 123, outputPad: 1, ...patch };
+	return { keyText: () => "", keyHint: (_keybinding, description) => description, args: {}, toolCallId: "test", invalidate() {}, lastComponent: undefined, state: {}, cwd: "/work", executionStarted: true, argsComplete: true, isPartial: false, expanded: false, showImages: true, isError: false, durationMs: 123, outputPad: 1, ...patch };
 }
 function result(text: string, details?: unknown): Result {
 	return { content: [{ type: "text", text }], details };

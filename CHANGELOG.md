@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-12
+
+- Qualify development dependencies and test fixtures against Pi 1.5.1.
+- Describe the full variety of palettes in the README.
 - Emphasize separate changed spans in recorded edit diffs while preserving common
   text between edits, Unicode graphemes, semantic colors and narrow-width layout.
 - Pair replacements within contiguous change groups after line-number shifts;

@@ -3,7 +3,7 @@
 ![Illustration of Phosphor, Poison, Cyberpunk 2077, and Edgerunner palettes](assets/banner.png)
 
 **Twelve dark palettes and a framed terminal editor for [Pi](https://github.com/earendil-works/pi-mono).**
-pi-1337 combines a set of phosphor-inspired themes with an extension that moves the editor and useful session status into a centered frame.
+pi-1337 combines diverse CRT, cyberpunk, synthwave, and HUD-inspired palettes with an extension that moves the editor and useful session status into a centered frame.
 
 ## What it adds
 
@@ -94,7 +94,7 @@ npm test
 npm run test:parity
 ```
 
-Development packages are pinned to Pi 1.4.0; wildcard peer dependencies do not promise compatibility with older hosts. Set `PI_TUI` to your installed `pi-tui/dist/index.js` for the parity sweep. Without it, the command uses a `../pi` checkout and skips if that checkout is absent.
+Development packages are pinned to Pi 1.5.1; wildcard peer dependencies do not promise compatibility with older hosts. Set `PI_TUI` to your installed `pi-tui/dist/index.js` for the parity sweep. Without it, the command uses a `../pi` checkout and skips if that checkout is absent.
 
 ## License
 
