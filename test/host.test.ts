@@ -12,6 +12,11 @@ const hostVersion = packageJson.devDependencies["@earendil-works/pi-coding-agent
 
 test(`Pi ${hostVersion} loads the package and all palettes through its real resource loader`, async () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi1337-host-"));
+	// Toggles decide which handlers exist: the developer's own config must not.
+	const keys = ["PI_1337_STATE_DIR", "PI_1337_DISABLE", "PI_1337_TITLE", "PI_1337_SUMMARY"];
+	const saved = keys.map(key => process.env[key]);
+	for (const key of keys) delete process.env[key];
+	process.env.PI_1337_STATE_DIR = dir;
 	try {
 		const loader = new DefaultResourceLoader({
 			cwd: dir,
@@ -28,15 +33,16 @@ test(`Pi ${hostVersion} loads the package and all palettes through its real reso
 		assert.equal(loaded.extensions.length, 1);
 		const extension = loaded.extensions[0];
 		assert.ok(extension);
-		for (const event of ["agent_settled", "ui_prompt_start", "ui_prompt_end", "session_compact_failed"]) {
+		for (const event of ["agent_settled", "ui_prompt_start", "ui_prompt_end", "session_compact_failed", "tool_execution_start", "tool_execution_end", "message_start", "message_update", "message_end", "turn_end", "input", "session_info_changed"]) {
 			assert.ok(extension.handlers.has(event), `missing Pi ${hostVersion} handler: ${event}`);
 		}
 		const themes = loader.getThemes();
 		assert.deepEqual(themes.diagnostics, []);
 		assert.deepEqual(themes.themes.map((theme) => theme.name).sort(), [
-			"1337", "1337-amber", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-fallout", "1337-ice", "1337-magma", "1337-neon", "1337-poison", "1337-skynet", "1337-skynet-dark",
+			"1337", "1337-amber", "1337-cosmos", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-fallout", "1337-ice", "1337-magma", "1337-neon", "1337-poison", "1337-skynet", "1337-skynet-dark",
 		]);
 	} finally {
+		keys.forEach((key, i) => saved[i] === undefined ? delete process.env[key] : process.env[key] = saved[i]);
 		rmSync(dir, { recursive: true, force: true });
 	}
 });

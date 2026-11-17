@@ -5,15 +5,15 @@
  * inline), a bottom `─` rule, then any autocomplete rows. `frameEditor` takes
  * that raw output, drops the two rules, and rebuilds a centered box around the
  * editor content. Autocomplete stays below the box at Pi's original row indices.
- * The chrome lives *inside* the box, not cut into the border: the prompt sigil
- * and spinner sit in the first row's side gutters, and the workspace / token
- * usage / model / persona sit on a status row when autocomplete is closed.
+ * The border carries exactly one label, the model identity at the top-right;
+ * the rest of the chrome lives inside: the prompt sigil and spinner sit in the
+ * first row's side gutters, and a status row (where you are, left; the
+ * session's state, right) sits above the bottom edge when autocomplete is closed.
  *
- *      ╭────────────────────────────────────────────╮
- *      │ › refactor the auth module_             ⠹  │
- *      │                                            │
- *      │ ~/…/pi-1337        12.3k · 6%    opus · ◆  │
- *      ╰────────────────────────────────────────────╯
+ *      ╭──────────────────────────── anthropic/opus-4-8 · high ──╮
+ *      │ › refactor the auth module_                          ⠹  │
+ *      │ ~/…/pi-1337 · main               12.3k · 6% · ~$0.42    │
+ *      ╰─────────────────────────────────────────────────────────╯
  *
  * No Pi imports — `string[]` in, `string[]` out — so it unit-tests with `tsx`.
  */
@@ -29,11 +29,14 @@ export interface BorderStyle {
 	v: string;
 }
 
-/** Rounded single-line box — a soft, continuous outline (no labels cut into it). */
+/** Rounded single-line box — a soft, continuous outline. */
 export const ROUNDED: BorderStyle = { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" };
 
 /** Columns reserved on each side of every body row for the chrome gutters. */
 export const GUTTER = 2;
+
+/** Rule cells the top label keeps on its left (at least) and its right (exactly). */
+const LABEL_RULE = 2;
 
 /**
  * Width the editor must be rendered at to fit inside a `boxWidth` panel: the box
@@ -60,6 +63,11 @@ export interface FrameOptions {
 	style: BorderStyle;
 	/** Colorizer for the border glyphs (corners, edges, side rails). */
 	border: (text: string) => string;
+	/**
+	 * Pre-colored ladder (widest first) for the one label the top border carries,
+	 * at its right end: `╭──… label ──╮`. No rung that fits → the plain rule.
+	 */
+	borderLabel?: RowCandidate[];
 	/** Pre-colored prompt sigil (1 col) placed in the first row's left gutter. */
 	prompt?: string;
 	/** Pre-colored first spinner row; empty when idle/waiting. */
@@ -70,51 +78,74 @@ export interface FrameOptions {
 	spinnerHeight?: number;
 	/** Fixed right-indicator width reserved even when idle (defaults to one cell). */
 	spinnerColumns?: number;
-	/** Pre-colored status segments laid out on the interior row above the bottom edge. */
+	/** Pre-colored left group of the status row: a plain string, or a degradation ladder (widest first). */
 	statusLeft?: string | RowCandidate[];
-	statusCenter?: string;
-	/** Right segment: a plain string, or a degradation ladder (widest candidate first). */
+	/** Right group, right-aligned: a plain string, or a degradation ladder (widest candidate first). */
 	statusRight?: string | RowCandidate[];
+	/** Transient label painted over the left group's cells; never moves the right group (see layoutRow). */
+	statusOverlay?: RowCandidate[];
 }
 
 /**
- * One rung of a status-segment degradation ladder. `pre` and `post` are kept
- * verbatim during normal narrowing; `flex` is the only part that trims before
- * falling to the next rung. If no rung fits at all, the final fallback may
- * hard-truncate the last rung with a visible `…`. All parts are pre-colored strings.
+ * One rung of a degradation ladder. `pre` and `post` are kept verbatim during
+ * normal narrowing; `flex` is the only part that trims before falling to the
+ * next rung. If no rung fits at all, the status row's final fallback may
+ * hard-truncate the last rung with a visible `…` (a last rung with `minFlex`
+ * is absent instead). All parts are pre-colored strings.
  */
 export interface RowCandidate {
 	pre?: string;
 	flex?: string;
 	post?: string;
+	/**
+	 * The narrowest `flex` may trim to, in columns. When set, the rung is shown
+	 * whole, trimmed to no fewer than this, or skipped — as the last rung too,
+	 * which otherwise trims down to one column. Unset: MIN_FLEX.
+	 */
+	minFlex?: number;
 }
 
 /** A trimmed flex part narrower than this reads as noise — fall to the next rung instead. */
 const MIN_FLEX = 5;
-/** Don't preserve the center by reducing the workspace label to a lone glyph. */
+/** Don't preserve the right group by reducing a plain-string workspace label to a lone glyph. */
 const MIN_LEFT_LABEL = 5;
 
 /**
- * Pick the widest ladder rung that fits in `avail` columns. A rung with a
- * `flex` part may trim it with `…` down to MIN_FLEX columns (the last rung
- * trims below the floor rather than vanish). If nothing fits, the last rung is
- * hard-truncated so the row can never overflow.
+ * The widest rung that fits in `avail` columns, with `flex` trimmed down to
+ * MIN_FLEX (the last rung below it, to one column) or to the rung's own
+ * `minFlex`, which holds for the last rung too; `undefined` when none does.
  */
-export function resolveSegment(candidates: RowCandidate[], avail: number): string {
-	if (avail <= 0 || candidates.length === 0) return "";
+function fitSegment(candidates: RowCandidate[], avail: number): string | undefined {
+	if (avail <= 0) return undefined;
 	for (let i = 0; i < candidates.length; i++) {
-		const { pre = "", flex = "", post = "" } = candidates[i];
+		const { pre = "", flex = "", post = "", minFlex } = candidates[i];
 		const full = pre + flex + post;
 		if (visibleWidth(full) <= avail) return full;
 		if (flex) {
 			const flexAvail = avail - visibleWidth(pre) - visibleWidth(post);
 			const isLast = i === candidates.length - 1;
-			if (flexAvail >= MIN_FLEX || (isLast && flexAvail >= 1)) {
+			if (minFlex !== undefined ? flexAvail >= minFlex : flexAvail >= MIN_FLEX || (isLast && flexAvail >= 1)) {
 				return pre + truncateToWidth(flex, flexAvail) + post;
 			}
 		}
 	}
+	return undefined;
+}
+
+/**
+ * Pick the widest ladder rung that fits in `avail` columns. A rung with a
+ * `flex` part may trim it with `…` down to MIN_FLEX columns (the last rung
+ * trims below the floor rather than vanish). If nothing fits, the last rung is
+ * hard-truncated so the row can never overflow — unless it declares a
+ * `minFlex`: that rung's contract is whole, trimmed to its floor, or absent,
+ * so below its floor the segment is empty rather than a stub of the label.
+ */
+export function resolveSegment(candidates: RowCandidate[], avail: number): string {
+	if (avail <= 0 || candidates.length === 0) return "";
+	const fitted = fitSegment(candidates, avail);
+	if (fitted !== undefined) return fitted;
 	const last = candidates[candidates.length - 1];
+	if (last.minFlex !== undefined) return "";
 	return truncateToWidth(`${last.pre ?? ""}${last.flex ?? ""}${last.post ?? ""}`, avail);
 }
 
@@ -159,92 +190,124 @@ export function scrollMarker(rule: string | undefined, glyph: "↑" | "↓"): st
 }
 
 /**
- * Lay out `left`, `center`, `right` across exactly `width` columns using space
- * fill: left-aligned left, right-aligned right, an optional centered segment
- * between them. When the row is crowded, a long left segment yields first so a
- * useful right rung can survive, and the center too when both can fit. A left
- * ladder reserves its narrowest semantic label before provider/model detail is
- * allocated. The center is dropped when that combination cannot fit. Always
- * returns `width` cols.
+ * The top edge, `boxWidth` columns: `╭─…─╮`, or `╭─… label ──╮` when a rung of
+ * `label` fits with at least two rule cells on its left. The label is measured
+ * with the shared ruler and sits between single spaces; the rule pieces are
+ * colored on their own so the label keeps its colors. A rung that only trims
+ * to a lone `…`, or shows nothing visible, is noise, not a label: the rule
+ * stays plain then.
  */
-export function layoutRow(left: string | RowCandidate[], center: string, right: string | RowCandidate[], width: number): string {
+function topEdge(style: BorderStyle, border: (text: string) => string, boxWidth: number, label: RowCandidate[] | undefined): string {
+	const interior = Math.max(0, boxWidth - 2);
+	const plain = border(style.tl + style.h.repeat(interior) + style.tr);
+	if (!label || label.length === 0) return plain;
+	const room = interior - LABEL_RULE - 2 - LABEL_RULE;
+	const shown = fitSegment(label, room);
+	// No visible content (escape-only, blank, zero-width) is no label either: never `╭──  ──╮`.
+	if (shown === undefined) return plain;
+	const visible = stripAnsi(shown).trim();
+	if (!visible || visible === "…" || visibleWidth(visible) === 0) return plain;
+	const lead = interior - 2 - LABEL_RULE - visibleWidth(shown);
+	if (lead < LABEL_RULE) return plain;
+	const row = `${border(style.tl + style.h.repeat(lead))} ${shown} ${border(style.h.repeat(LABEL_RULE) + style.tr)}`;
+	// Defense-in-depth: a residual mismeasure must never change the box width.
+	return visibleWidth(row) === boxWidth ? row : plain;
+}
+
+/**
+ * Lay out `left` and `right` across exactly `width` columns using space fill:
+ * left-aligned left, right-aligned right. When the row is crowded, a long left
+ * segment yields first so a useful right rung can survive. A left ladder
+ * reserves its narrowest semantic label before the right is allocated, so the
+ * right keeps its widest rung that fits beside that floor and the left then
+ * spends what remains. Always returns `width` cols.
+ *
+ * `overlay` is a transient label (the running tool) that borrows the left
+ * segment's cells without moving anything else. The row is first laid out from
+ * left/right alone; then the cells before the right segment are repainted with
+ * the overlay, left-aligned and space-padded, resolved against those cells − 1
+ * so one space always separates it from what follows. Rungs are tried whole,
+ * widest first, and only the last rung may trim. An overlay that resolves to
+ * nothing — including one whose cells cannot hold its narrowest useful rung —
+ * leaves the row as it was. Guarantee: for any width the right segment occupies
+ * byte-identical columns with and without the overlay, and the row is exactly
+ * `width` columns — a label that comes and goes never reflows the row.
+ */
+export function layoutRow(
+	left: string | RowCandidate[],
+	right: string | RowCandidate[],
+	width: number,
+	overlay?: RowCandidate[],
+): string {
 	if (width <= 0) return "";
+	const { l, r } = placeSegments(left, right, width);
+	let lead = `${l}${" ".repeat(Math.max(0, width - visibleWidth(l) - visibleWidth(r)))}`;
+	if (overlay && overlay.length > 0) {
+		const whole = ({ pre = "", flex = "", post = "" }: RowCandidate): string => pre + flex + post;
+		const region = visibleWidth(lead);
+		const rung = overlay.find(candidate => visibleWidth(whole(candidate)) <= region - 1);
+		// Below its narrowest useful rung the overlay would hard-truncate to a lone
+		// "…" in place of the workspace; keep the row as it was instead.
+		const avail = region - 1;
+		const shown = rung ? whole(rung)
+			: avail >= minimumUsefulWidth(overlay) ? resolveSegment([overlay[overlay.length - 1]], avail) : "";
+		const shownWidth = visibleWidth(shown);
+		if (shownWidth > 0) lead = `${shown}${" ".repeat(Math.max(0, region - shownWidth))}`;
+	}
+	const line = lead + r;
+	// Defense-in-depth: a residual mismeasure must never exceed `width` and wrap the terminal.
+	return visibleWidth(line) > width ? truncateToWidth(line, width) : line;
+}
+
+/** Resolve the left and right segments for a `width`-column row with at least one column between them. */
+function placeSegments(left: string | RowCandidate[], right: string | RowCandidate[], width: number): { l: string; r: string } {
 	const minGap = 1;
 	let l: string;
 	let r: string;
-	let centerAllowed = true;
-	const centerWidth = visibleWidth(center);
 	if (Array.isArray(left)) {
-		// A semantic left ladder (workspace path → repository basename) outranks
-		// optional center/provider detail. Reserve its narrowest useful rung and the
-		// right ladder's minimum before spending the remaining columns on richer labels.
-		const leftFloor = minimumUsefulWidth(left);
-		const rightFloor = minimumUsefulWidth(right);
-		const canPreserveCenter = !!center && leftFloor + rightFloor + centerWidth + 2 <= width;
-		centerAllowed = canPreserveCenter;
-		const reservedCenter = canPreserveCenter ? centerWidth + 2 : minGap;
-		const rightRoom = Math.max(0, width - leftFloor - reservedCenter);
+		// A semantic left ladder (workspace path → repository basename) keeps its
+		// narrowest useful rung; the right takes its widest rung beside that floor,
+		// and the left then spends what remains on richer labels.
+		const rightRoom = Math.max(0, width - minimumUsefulWidth(left) - minGap);
 		r = Array.isArray(right) ? resolveSegment(right, rightRoom) : truncateToWidth(right, rightRoom);
-		const leftRoom = Math.max(0, width - visibleWidth(r) - reservedCenter);
-		l = resolveSegment(left, leftRoom);
+		l = resolveSegment(left, Math.max(0, width - visibleWidth(r) - minGap));
 	} else {
 		l = left;
 		const rightFloor = minimumUsefulWidth(right);
 		const leftWidth = visibleWidth(l);
-		const canPreserveCenter =
-			!!center &&
-			leftWidth > centerWidth + rightFloor &&
-			leftWidth + centerWidth + rightFloor + 2 > width &&
-			width - centerWidth - rightFloor - 2 >= MIN_LEFT_LABEL;
-		const canPreserveRight =
+		const yieldLeft =
 			leftWidth > rightFloor &&
 			leftWidth + rightFloor + minGap > width &&
 			width - rightFloor - minGap >= MIN_LEFT_LABEL;
-		const yieldLeft = canPreserveCenter || canPreserveRight;
 		if (yieldLeft) {
 			// First keep the widest semantic right rung that fits; then abbreviate only
-			// the overlong left metadata to make room for it (and the center when possible).
-			const rightRoom = canPreserveCenter
-				? width - centerWidth - MIN_LEFT_LABEL - 2
-				: width - MIN_LEFT_LABEL - minGap;
+			// the overlong left metadata to make room for it.
+			const rightRoom = width - MIN_LEFT_LABEL - minGap;
 			r = Array.isArray(right) ? resolveSegment(right, rightRoom) : truncateToWidth(right, rightRoom);
-			const centerRoom = canPreserveCenter ? centerWidth + 2 : minGap;
-			l = truncateToWidth(left, width - centerRoom - visibleWidth(r));
+			l = truncateToWidth(left, width - minGap - visibleWidth(r));
 		} else {
 			const rightWidth = Math.max(0, width - leftWidth - minGap);
 			r = Array.isArray(right) ? resolveSegment(right, rightWidth) : right;
 		}
 	}
 	// Extreme widths only: clip the right segment to what the left leaves, then the
-	// left to what remains. The final clamp below guarantees the row never overflows.
+	// left to what remains. The final clamp in layoutRow guarantees no overflow.
 	if (visibleWidth(l) + visibleWidth(r) + minGap > width) {
 		r = truncateToWidth(r, Math.max(0, width - visibleWidth(l) - minGap));
 	}
 	if (visibleWidth(l) + visibleWidth(r) + minGap > width) {
 		l = truncateToWidth(l, Math.max(0, width - visibleWidth(r) - minGap));
 	}
-	const gap = Math.max(0, width - visibleWidth(l) - visibleWidth(r));
-	const c = centerAllowed && center && visibleWidth(center) + 2 <= gap ? center : "";
-	let line: string;
-	if (c) {
-		const rem = gap - visibleWidth(c);
-		const f1 = Math.floor(rem / 2);
-		const f2 = rem - f1;
-		line = `${l}${" ".repeat(f1)}${c}${" ".repeat(f2)}${r}`;
-	} else {
-		line = `${l}${" ".repeat(gap)}${r}`;
-	}
-	// Defense-in-depth: a residual mismeasure must never exceed `width` and wrap the terminal.
-	return visibleWidth(line) > width ? truncateToWidth(line, width) : line;
+	return { l, r };
 }
 
-/** Width needed to preserve the narrowest meaningful right-side label. */
-function minimumUsefulWidth(right: string | RowCandidate[]): number {
-	if (!Array.isArray(right)) return Math.min(MIN_FLEX, visibleWidth(right));
-	const last = right[right.length - 1];
+/** Width needed to preserve the narrowest meaningful label of a segment. */
+function minimumUsefulWidth(segment: string | RowCandidate[]): number {
+	if (!Array.isArray(segment)) return Math.min(MIN_FLEX, visibleWidth(segment));
+	const last = segment[segment.length - 1];
 	if (!last) return 0;
-	const { pre = "", flex = "", post = "" } = last;
-	return visibleWidth(pre) + visibleWidth(post) + Math.min(MIN_FLEX, visibleWidth(flex));
+	const { pre = "", flex = "", post = "", minFlex = MIN_FLEX } = last;
+	return visibleWidth(pre) + visibleWidth(post) + Math.min(minFlex, visibleWidth(flex));
 }
 
 /** Pad or truncate a line to exactly `width` columns so the right rail always aligns. */
@@ -271,7 +334,7 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 	const spinnerColumns = Math.max(1, options.spinnerColumns ?? 1);
 	const editorWidth = editorWidthFor(boxWidth, spinnerColumns); // width the editor was rendered at
 
-	const top = `${pad}${border(style.tl + style.h.repeat(INT) + style.tr)}`;
+	const top = `${pad}${topEdge(style, border, boxWidth, options.borderLabel)}`;
 	const bottom = `${pad}${border(style.bl + style.h.repeat(INT) + style.br)}`;
 
 	const prompt = options.prompt ?? "";
@@ -299,11 +362,13 @@ export function frameEditor(raw: string[], options: FrameOptions): string[] {
 	// The base editor places autocomplete immediately after its bottom rule.
 	// Hide status while the menu is open so that row indices match without
 	// reaching into the base editor's private mouse/layout state.
-	if (below.length === 0 && (options.statusLeft || options.statusCenter || options.statusRight)) {
+	const hasLeft = Array.isArray(options.statusLeft) ? options.statusLeft.length > 0 : !!options.statusLeft;
+	const hasRight = Array.isArray(options.statusRight) ? options.statusRight.length > 0 : !!options.statusRight;
+	if (below.length === 0 && (hasLeft || hasRight)) {
 		const statusLogo = pyramid && content.length === 1 && spinnerRows && spinner ? spinnerRows[1] : "";
 		const slotWidth = statusSlotWidth(spinnerColumns, pyramid ? 2 : 1);
 		const statusWidth = Math.max(0, INT - slotWidth);
-		const interior = layoutRow(options.statusLeft ?? "", options.statusCenter ?? "", options.statusRight ?? "", statusWidth);
+		const interior = layoutRow(options.statusLeft ?? "", options.statusRight ?? "", statusWidth, options.statusOverlay);
 		const statusGutter = slotWidth ? fit(`${statusLogo}${down && content.length === 1 ? border(down) : " "}`, slotWidth) : "";
 		rows.push(`${pad}${v}${interior}${statusGutter}${v}`);
 	}

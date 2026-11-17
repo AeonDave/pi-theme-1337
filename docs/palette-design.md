@@ -1,6 +1,6 @@
 # Palette design
 
-Twelve palette names are registered, and all twelve share Pi's strict 51-token contract. Eleven use vivid chromatic colors over deep, family-specific surfaces; the Terminator 2 HUD palette uses warm-white text on red-tinted black. Tool output remains legible body text, semantic status roles stay distinct, and no palette ships images.
+Thirteen palette names are registered, and all thirteen share Pi's strict 51-token contract. Twelve use vivid chromatic colors over deep, family-specific surfaces; the Terminator 2 HUD palette uses warm-white text on red-tinted black. Tool output remains legible body text, semantic status roles stay distinct, and no palette ships images.
 
 ## Palette anchors
 
@@ -13,6 +13,7 @@ Twelve palette names are registered, and all twelve share Pi's strict 51-token c
 | `1337-cyberpunk-2077` | `#000000` / `#111000` / `#211c00` | `#fcee0a` / `#52c9ff` | `#ffe56b` / `#ff5364` / `#ff8a00` / `#fff09a` |
 | `1337-cyberpunk-2077-edgerunner` | `#100307` / `#1d0710` / `#2c0b18` | `#ff8995` / `#00e6e6` | `#ffd43b` / `#ff5368` / `#ff8c00` / `#ffe65a` |
 | `1337-neon` | `#170f21` / `#291b39` / `#3d2c50` | `#e589ff` / `#ff62da` | `#6bdf9a` / `#ff759b` / `#ffe36d` / `#ffe0ff` |
+| `1337-cosmos` | `#11111b` / `#1a1a30` / `#292a3e` | `#ccaaff` / `#f9e2af` | `#a6e3a1` / `#f38ba8` / `#fab387` / `#e4e9fc` |
 | `1337-poison` | `#091610` / `#14271d` / `#302439` | `#69f29a` / `#e17bff` | `#59d98a` / `#ff718f` / `#ffe36d` / `#d5ffe2` |
 | `1337-magma` | `#160d0b` / `#271711` / `#3a2319` | `#ff9876` / `#46e5df` | `#69df97` / `#ff677e` / `#ffd166` / `#ffe0c9` |
 | `1337-fallout` | `#111608` / `#202a12` / `#303d1d` | `#c8f96c` / `#e7ff72` | `#90d83e` / `#ff9a4d` / `#ffdc35` / `#f2ffd0` |
@@ -31,13 +32,15 @@ Neon combines violet and hot pink with cyan syntax; Fallout stays yellow-lime ra
 
 `test/theme.test.ts` measures colors against intended dark surfaces. Required floors are 7:1 for body/tool output on void and pending/success/error tool panels and for user/custom message text on its associated background; 4.5:1 for dim/muted on void, panel, selection, and tool panels; 4.5:1 for syntax, diff, and status roles on their defined surfaces. The tests also enforce text/secondary/status contrast against representative untinted terminal `#1e1e1e`, separation of semantic pairs by at least 8 OKLab ΔE × 100, and luminance ordering `border < dim < muted < text` with existing tier gaps.
 
-The eleven chromatic palettes keep an RGB channel range of at least 85 and HSL saturation of at least 60%. Skynet's warm-white body has its own HUD color checks; Skynet Dark remains covered by the red-body vividness guard. These are project identity and contrast checks, not an accessibility claim for arbitrary terminal backgrounds.
+The twelve chromatic palettes keep an RGB channel range of at least 85 and HSL saturation of at least 60%. Skynet's warm-white body has its own HUD color checks; Skynet Dark remains covered by the red-body vividness guard. These are project identity and contrast checks, not an accessibility claim for arbitrary terminal backgrounds.
 
-Across the twelve current palettes, the observed minimums are 7.14:1 for body/tool output (Neon), 7.14:1 for user/custom message text (Neon), 4.64:1 for dim/muted (Fallout), 5.25:1 for syntax (Edgerunner), 5.92:1 for diff roles (Cyberpunk 2077), 4.78:1 for status roles (Neon), and 4.68:1 for secondary text against untinted `#1e1e1e` (Edgerunner). Cyberpunk 2077 measures 15.19:1 for body/tool output, 16.56:1 / 15.38:1 for user/custom message text, 5.26:1 / 9.78:1 for dim/muted, 5.66:1 for syntax, 5.92:1 for diff roles, 5.42:1 for status roles, and 5.14:1 for dim text against untinted `#1e1e1e`. Edgerunner measures 8.24:1 for body/tool output, 5.05:1 / 6.58:1 for dim/muted, 5.25:1 for syntax, 5.73:1 for status roles, and 4.68:1 for dim text against untinted `#1e1e1e`. Every palette exceeds the corresponding test floor.
+Across the thirteen current palettes, the observed minimums are 7.14:1 for body/tool output (Neon), 7.14:1 for user/custom message text (Neon), 4.58:1 for dim/muted (Cosmos), 5.19:1 for syntax (Cosmos), 5.92:1 for diff roles (Cyberpunk 2077), 4.78:1 for status roles (Neon), and 4.68:1 for secondary text against untinted `#1e1e1e` (Edgerunner). Cyberpunk 2077 measures 15.19:1 for body/tool output, 16.56:1 / 15.38:1 for user/custom message text, 5.26:1 / 9.78:1 for dim/muted, 5.66:1 for syntax, 5.92:1 for diff roles, 5.42:1 for status roles, and 5.14:1 for dim text against untinted `#1e1e1e`. Edgerunner measures 8.24:1 for body/tool output, 5.05:1 / 6.58:1 for dim/muted, 5.25:1 for syntax, 5.73:1 for status roles, and 4.68:1 for dim text against untinted `#1e1e1e`. Every palette exceeds the corresponding test floor.
 
 ## Inspiration references
 
 The palette combinations are original, informed by the references below.
+
+- Cosmos takes its swatches from the cover art and pill bar of [pi-starline](https://github.com/Andy8647/pi-starline) (MIT), which are the [Catppuccin](https://github.com/catppuccin/palette) Mocha colors (MIT): crust `#11111b` for the page, surface1 `#45475a` for rules, subtext0 `#a6adc8` for secondary text, text `#cdd6f4` for the user's own messages, and the green, peach, red, yellow, blue, lavender, pink and teal pastels for status, syntax and the thinking ramp. Catppuccin's text color is too neutral for this family's vividness rule, so the body is its mauve pushed to `#ccaaff`; the panel, selection, tool bands and dim steps are derived. The star-gold accent on cool surfaces is what separates it from Cyber and Neon.
 
 - [IBM 5150 Technical Reference (August 1981), monochrome display section](https://www.minuszerodegrees.net/manuals/IBM_5150_Technical_Reference_6025005_AUG81.pdf) and the [Centre for Computing History's IBM 5151 display entry](https://www.computinghistory.org.uk/det/39463/IBM-5151-Personal-Computer-Display/) describe the period's persistent green monochrome CRT direction behind the default palette.
 - The [Cyberpunk 2077 inspired theme post on r/S24Ultra](https://www.reddit.com/r/S24Ultra/comments/1g2krv1/cyberpunk_2077_inspired_theme/) is the visual reference for black fields, dominant yellow, and cyan-blue accents. This is a community phone-theme interpretation, not an official Cyberpunk 2077 color specification.

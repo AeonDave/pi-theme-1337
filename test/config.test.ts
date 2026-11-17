@@ -12,6 +12,7 @@ import {
 	hiddenThinkingLabel,
 	isBundledTheme,
 	isDisabled,
+	maxBoxWidth,
 	resolveSettings,
 	stateDir,
 } from "../src/config.ts";
@@ -41,6 +42,13 @@ afterEach(() => {
 	delete process.env.PI_1337_BG;
 	delete process.env.PI_1337_DISABLE;
 	delete process.env.PI_1337_THINKING_LABEL;
+	delete process.env.PI_1337_ACTIVITY;
+	delete process.env.PI_1337_GROUPS;
+	delete process.env.PI_1337_SUMMARY;
+	delete process.env.PI_1337_TITLE;
+	delete process.env.PI_1337_QUOTA;
+	delete process.env.PI_1337_POLISH;
+	delete process.env.PI_1337_MAX_WIDTH;
 	delete process.env.PI_1337_STATE_DIR;
 	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -93,6 +101,10 @@ test("envPalette pins a palette only when PI_1337_THEME explicitly names one", (
 	assert.equal(envPalette(), "1337-cyber");
 	process.env.PI_1337_THEME = "neon";
 	assert.equal(envPalette(), "1337-neon");
+	process.env.PI_1337_THEME = "cosmos";
+	assert.equal(envPalette(), "1337-cosmos");
+	process.env.PI_1337_THEME = "1337-cosmos";
+	assert.equal(envPalette(), "1337-cosmos");
 	process.env.PI_1337_THEME = "fallout";
 	assert.equal(envPalette(), "1337-fallout");
 	process.env.PI_1337_THEME = "skynet";
@@ -105,8 +117,8 @@ test("envPalette pins a palette only when PI_1337_THEME explicitly names one", (
 	assert.equal(envPalette(), "1337-cyberpunk-2077-edgerunner");
 });
 
-test("isBundledTheme recognizes exactly the twelve shipped palettes", () => {
-	for (const name of ["1337", "1337-amber", "1337-ice", "1337-poison", "1337-magma", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-neon", "1337-fallout", "1337-skynet", "1337-skynet-dark"])
+test("isBundledTheme recognizes exactly the thirteen shipped palettes", () => {
+	for (const name of ["1337", "1337-amber", "1337-ice", "1337-poison", "1337-magma", "1337-cyber", "1337-cyberpunk-2077", "1337-cyberpunk-2077-edgerunner", "1337-neon", "1337-cosmos", "1337-fallout", "1337-skynet", "1337-skynet-dark"])
 		assert.ok(isBundledTheme(name));
 	assert.ok(!isBundledTheme("dark"));
 	assert.ok(!isBundledTheme("1337-custom")); // unknown sibling names are not ours to claim
@@ -155,6 +167,36 @@ test("chooseStartupTheme lets an explicit env pin win over the persisted choice"
 	process.env.PI_1337_THEME = "amber";
 	assert.equal(chooseStartupTheme("1337-ice"), "1337-amber");
 	assert.equal(chooseStartupTheme("dark"), "1337-amber");
+});
+
+test("chooseStartupTheme keeps a light theme unless a palette was asked for", () => {
+	// Every bundled palette is dark: forcing one onto a light terminal makes the
+	// text unreadable, so a light theme survives unless the user named a palette.
+	const cases: { env?: string; file?: string; current: string | undefined; appearance?: "light" | "dark"; want: string; why: string }[] = [
+		{ env: "1337-ice", current: "light", appearance: "light", want: "1337-ice", why: "1: env pin wins on a light theme" },
+		{ env: "amber", current: "1337-fallout", appearance: "dark", want: "1337-amber", why: "1: env pin wins over a bundled current" },
+		{ current: "1337-neon", appearance: "dark", want: "1337-neon", why: "2: bundled current kept" },
+		{ file: "magma", current: "1337-neon", appearance: "dark", want: "1337-neon", why: "2: bundled current beats the file" },
+		{ file: "cyber", current: "light", appearance: "light", want: "1337-cyber", why: "3: file palette applied on a light theme" },
+		{ current: "light", appearance: "light", want: "light", why: "4: built-in light kept" },
+		{ current: "solarized-light", appearance: "light", want: "solarized-light", why: "4: third-party light kept" },
+		{ current: "dark", appearance: "dark", want: "1337", why: "5: built-in dark → default" },
+		{ current: "gruvbox", appearance: "dark", want: "1337", why: "5: third-party dark → default" },
+		{ current: "light", want: "1337", why: "5: unknown appearance → default, as before" },
+		{ current: undefined, appearance: "light", want: "1337", why: "5: no current theme to keep" },
+		{ env: "on", current: "light", appearance: "light", want: "1337", why: "5: explicit on forces default on light" },
+		{ env: "chartreuse", current: "light", appearance: "light", want: "light", why: "4: a typo is not a request for a dark palette on a light theme" },
+		{ env: "", current: "light", appearance: "light", want: "light", why: "4: neither is an emptied variable" },
+		{ env: "chartreuse", current: "dark", appearance: "dark", want: "1337", why: "5: an unrecognized env value on a dark theme still means default" },
+		{ env: " ON ", current: "light", appearance: "light", want: "1337", why: "5: `on` is matched as the other toggles are" },
+		{ env: "on", file: "cyber", current: "light", appearance: "light", want: "1337", why: "5: env on suppresses the file palette" },
+	];
+	for (const c of cases) {
+		withConfigFile(c.file === undefined ? null : JSON.stringify({ theme: c.file }));
+		if (c.env === undefined) delete process.env.PI_1337_THEME;
+		else process.env.PI_1337_THEME = c.env;
+		assert.equal(chooseStartupTheme(c.current, c.appearance), c.want, c.why);
+	}
 });
 
 // --- config.json state file -------------------------------------------------
@@ -254,6 +296,30 @@ test("polished tool views default on and allow file/env opt-out", () => {
 	}
 });
 
+for (const [name, accessor, env] of [
+	["activity label", "activity", "PI_1337_ACTIVITY"],
+	["tool grouping", "groups", "PI_1337_GROUPS"],
+	["run summary", "summary", "PI_1337_SUMMARY"],
+	["terminal title", "title", "PI_1337_TITLE"],
+	["subscription quota", "quota", "PI_1337_QUOTA"],
+] as const) {
+	test(`${name} defaults on and allows file/env opt-out`, () => {
+		delete process.env[env];
+		assert.equal(resolveSettings()[accessor], true);
+		withConfigFile(JSON.stringify({ [accessor]: false }));
+		assert.equal(resolveSettings()[accessor], false);
+		process.env[env] = " ON ";
+		assert.equal(resolveSettings()[accessor], true, "the env token wins over the config file");
+		process.env[env] = "off";
+		assert.equal(resolveSettings()[accessor], false);
+		delete process.env[env];
+		withConfigFile(JSON.stringify({ [accessor]: "false" }));
+		assert.equal(resolveSettings()[accessor], true, "wrong-typed config is ignored");
+		withConfigFile(null);
+		assert.equal(resolveSettings()[accessor], true);
+	});
+}
+
 test("resolveSettings merges env over file over defaults", () => {
 	withConfigFile(JSON.stringify({ theme: "ice", copyKey: "ctrl+alt+y", thinkingLabel: "file label" }));
 	process.env.PI_1337_COPY_KEY = "ctrl+shift+p";
@@ -263,4 +329,82 @@ test("resolveSettings merges env over file over defaults", () => {
 	assert.equal(s.thinkingLabel, "file label");
 	assert.equal(s.disable, false);
 	assert.equal(s.background, undefined);
+});
+
+test("polish resolution: env on/off wins, anything else defers to the file, then on", () => {
+	assert.equal(resolveSettings().polish, true, "unset, no file");
+	withConfigFile(JSON.stringify({ polish: true }));
+	assert.equal(resolveSettings().polish, true);
+	withConfigFile(JSON.stringify({ polish: false }));
+	process.env.PI_1337_POLISH = "maybe";
+	assert.equal(resolveSettings().polish, false, "an unrecognized env value defers to the file");
+	process.env.PI_1337_POLISH = "On";
+	assert.equal(resolveSettings().polish, true);
+	withConfigFile(JSON.stringify({ polish: true }));
+	process.env.PI_1337_POLISH = " OFF ";
+	assert.equal(resolveSettings().polish, false);
+});
+
+test("grouping is off whenever polish is off, from env or file", () => {
+	assert.equal(resolveSettings().groups, true, "on by default");
+	process.env.PI_1337_POLISH = "off";
+	process.env.PI_1337_GROUPS = "on";
+	assert.equal(resolveSettings().groups, false, "env polish off beats an explicit groups on");
+	delete process.env.PI_1337_POLISH;
+	delete process.env.PI_1337_GROUPS;
+	withConfigFile(JSON.stringify({ polish: false, groups: true }));
+	assert.equal(resolveSettings().groups, false, "file polish off beats file groups on");
+	process.env.PI_1337_POLISH = "on";
+	assert.equal(resolveSettings().groups, true, "env polish on re-enables the file's groups");
+	withConfigFile(JSON.stringify({ polish: false }));
+	assert.equal(resolveSettings().groups, true, "env polish on wins over file polish off");
+	assert.equal(resolveSettings().activity, true, "the activity label does not depend on polish");
+	process.env.PI_1337_POLISH = "off";
+	assert.equal(resolveSettings().activity, true);
+});
+
+test("maxBoxWidth defaults to the original 100-column box", () => {
+	assert.equal(maxBoxWidth(), 100);
+	assert.equal(resolveSettings().maxWidth, 100);
+});
+
+test("maxBoxWidth takes whole columns, 0/full for no cap, and raises tiny caps to 40", () => {
+	for (const [raw, expected] of [
+		["140", 140], [" 120 ", 120], ["0", Infinity], ["full", Infinity], [" FULL ", Infinity],
+		["40", 40], ["39", 40], ["1", 40], ["007", 40], ["080", 80],
+	] as const) {
+		process.env.PI_1337_MAX_WIDTH = raw;
+		assert.equal(maxBoxWidth(), expected, JSON.stringify(raw));
+	}
+});
+
+test("maxBoxWidth ignores invalid values at each level instead of shrinking the box", () => {
+	for (const raw of ["", " ", "-5", "12.5", "1e3", "wide", "100px", "0x40", "Infinity", "99999999999999999999"]) {
+		process.env.PI_1337_MAX_WIDTH = raw;
+		assert.equal(maxBoxWidth(), 100, `env ${JSON.stringify(raw)} falls back to the default`);
+	}
+	withConfigFile(JSON.stringify({ maxWidth: 140 }));
+	process.env.PI_1337_MAX_WIDTH = "garbage";
+	assert.equal(maxBoxWidth(), 140, "an invalid env value defers to the file");
+	for (const maxWidth of [-1, 12.5, true, null, "", "narrow", [120], { columns: 120 }]) {
+		withConfigFile(JSON.stringify({ maxWidth }));
+		delete process.env.PI_1337_MAX_WIDTH;
+		assert.equal(maxBoxWidth(), 100, `file ${JSON.stringify(maxWidth)} falls back to the default`);
+	}
+});
+
+test("maxBoxWidth reads the config file under the env var", () => {
+	withConfigFile(JSON.stringify({ maxWidth: 160 }));
+	assert.equal(maxBoxWidth(), 160);
+	withConfigFile(JSON.stringify({ maxWidth: "full" }));
+	assert.equal(maxBoxWidth(), Infinity);
+	withConfigFile(JSON.stringify({ maxWidth: 0 }));
+	assert.equal(maxBoxWidth(), Infinity);
+	withConfigFile(JSON.stringify({ maxWidth: 10 }));
+	assert.equal(maxBoxWidth(), 40, "the floor applies to the file too");
+	withConfigFile(JSON.stringify({ maxWidth: 160 }));
+	process.env.PI_1337_MAX_WIDTH = "120";
+	assert.equal(maxBoxWidth(), 120, "a valid env value wins");
+	process.env.PI_1337_MAX_WIDTH = "full";
+	assert.equal(resolveSettings().maxWidth, Infinity);
 });

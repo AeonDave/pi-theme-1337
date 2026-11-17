@@ -1,14 +1,19 @@
 {
   "name": "pi-theme-1337",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": false,
   "type": "module",
-  "description": "Twelve vivid themes for Pi with a framed editor, compact tool views, theme-aware diffs, and configurable text spinners.",
+  "description": "Thirteen vivid themes for Pi with a framed editor, compact tool views, theme-aware diffs, and configurable text spinners.",
   "keywords": [
     "pi-package",
     "pi-extension",
     "pi-theme",
+    "pi-themes",
+    "pi-coding-agent",
     "theme",
+    "dark-theme",
+    "terminal-theme",
+    "statusline",
     "phosphor",
     "minimal",
     "tui"
@@ -26,28 +31,25 @@
     "themes",
     "docs",
     "assets/banner.png",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/*.test.ts\"",
-    "test:parity": "node --import tsx test/parity.ts"
+    "test:parity": "node --import tsx test/parity.ts",
+    "preview": "node --import tsx test/preview.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.5.1",
-    "@earendil-works/pi-tui": "1.5.1",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-tui": "1.5.2",
     "@types/node": "^22.0.0",
     "tsx": "^4.23.12",
     "typescript": "^5.6.0"
-  },
-  "overrides": {
-    "@earendil-works/pi-coding-agent@1.5.1": {
-      "undici": "8.12.2"
-    }
   },
   "engines": {
     "node": ">=22.19.0"

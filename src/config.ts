@@ -9,6 +9,12 @@
  * | `PI_1337_THINKING_LABEL` | `∴ thinking` | Label for the collapsed thinking row. |
  * | `PI_1337_COPY_KEY`       | `alt+c`      | Shortcut that copies the input buffer as clean text. Empty disables it. |
  * | `PI_1337_BG`             | _(theme)_    | `on`/`auto` tints the terminal window background to the active palette's `void`; a `#rrggbb`/`#rgb` value forces that color; `off` leaves the terminal untouched. Unset defers to the theme's own `pi1337.background`; a set value overrides it. |
+ * | `PI_1337_ACTIVITY`       | `on`         | Names a long-running tool in the status row (`Running npm test…`); `off` hides it. |
+ * | `PI_1337_GROUPS`         | `on`         | Folds runs of three or more settled read/search/list rows into one tally row; `off` keeps one row per call. Needs `PI_1337_POLISH`. |
+ * | `PI_1337_SUMMARY`        | `on`         | Appends one summary row when a run that used tools, was interrupted or failed settles; `off` writes none and hides existing ones. |
+ * | `PI_1337_TITLE`          | `on`         | Shows the run state in the terminal title (`● Running npm test… — repo`); `off` never touches the title. |
+ * | `PI_1337_QUOTA`          | `on`         | Shows the subscription quota a provider reports in the status row (`5h 43% · wk 12%`); `off` reads nothing and registers no handler. |
+ * | `PI_1337_MAX_WIDTH`      | `100`      | Widest framed editor box, in columns; `0`/`full` removes the cap. Values below 40 are raised to 40. |
  */
 
 import { readFileSync } from "node:fs";
@@ -39,10 +45,17 @@ function agentDir(): string {
 export interface ConfigFileSettings {
 	disable?: boolean;
 	polish?: boolean;
+	activity?: boolean;
+	groups?: boolean;
+	summary?: boolean;
+	title?: boolean;
+	quota?: boolean;
 	theme?: string;
 	thinkingLabel?: string;
 	copyKey?: string;
 	background?: string;
+	/** Columns, or `"full"`; validated by `maxBoxWidth`, not here. */
+	maxWidth?: number | string;
 }
 
 let cachedDir: string | null = null;
@@ -85,10 +98,16 @@ export function configFileSettings(): ConfigFileSettings {
 	const src = parsed as Record<string, unknown>;
 	if (typeof src.disable === "boolean") out.disable = src.disable;
 	if (typeof src.polish === "boolean") out.polish = src.polish;
+	if (typeof src.activity === "boolean") out.activity = src.activity;
+	if (typeof src.groups === "boolean") out.groups = src.groups;
+	if (typeof src.summary === "boolean") out.summary = src.summary;
+	if (typeof src.title === "boolean") out.title = src.title;
+	if (typeof src.quota === "boolean") out.quota = src.quota;
 	if (typeof src.theme === "string") out.theme = src.theme;
 	if (typeof src.thinkingLabel === "string") out.thinkingLabel = src.thinkingLabel;
 	if (typeof src.copyKey === "string") out.copyKey = src.copyKey;
 	if (typeof src.background === "string") out.background = src.background;
+	if (typeof src.maxWidth === "number" || typeof src.maxWidth === "string") out.maxWidth = src.maxWidth;
 	cachedSettings = out;
 	return out;
 }
@@ -113,6 +132,7 @@ export const BUNDLED_THEMES = [
 	"1337-cyberpunk-2077",
 	"1337-cyberpunk-2077-edgerunner",
 	"1337-neon",
+	"1337-cosmos",
 	"1337-fallout",
 	"1337-skynet",
 	"1337-skynet-dark",
@@ -130,6 +150,7 @@ const THEME_ALIASES: Record<string, string> = {
 	"cyberpunk-2077": "1337-cyberpunk-2077",
 	"cyberpunk-2077-edgerunner": "1337-cyberpunk-2077-edgerunner",
 	neon: "1337-neon",
+	cosmos: "1337-cosmos",
 	fallout: "1337-fallout",
 	skynet: "1337-skynet",
 	"skynet-dark": "1337-skynet-dark",
@@ -177,18 +198,27 @@ function configPalette(): string | undefined {
 /**
  * The palette to apply at session start: an explicit environment pin wins;
  * otherwise Pi's current bundled palette is respected; otherwise a configured
- * config-file palette seeds startup, followed by default green.
+ * config-file palette seeds startup; otherwise a light theme is kept as is;
+ * otherwise default green. `appearance` is the current theme's (Pi's
+ * `Theme.appearance`).
  */
-export function chooseStartupTheme(current: string | undefined): string {
+export function chooseStartupTheme(current: string | undefined, appearance?: "light" | "dark"): string {
 	const pinned = envPalette();
 	if (pinned) return pinned;
 	// Pi's current bundled theme is its persisted /settings choice. The config
 	// file is a first-start fallback, so it must not override a later UI choice.
 	if (isBundledTheme(current)) return current;
-	// Any environment setting takes precedence over the config file, including
-	// `on` (default green) or an unrecognized value. With no env setting, allow
-	// the config-file palette to seed startup only when Pi has no bundled choice.
-	if (process.env.PI_1337_THEME === undefined) return configPalette() ?? THEME_NAME;
+	// Any environment setting takes precedence over the config file. An explicit
+	// `on` asks for the default palette, on a light theme too. With no env
+	// setting, the config-file palette may seed startup when Pi has no bundled choice.
+	const env = process.env.PI_1337_THEME;
+	if (env?.trim().toLowerCase() === "on") return THEME_NAME;
+	const configured = env === undefined ? configPalette() : undefined;
+	if (configured) return configured;
+	// Every bundled palette is dark and the tint is opt-in, so on a light theme
+	// (Pi picks `light` for a light terminal) switching would leave text
+	// unreadable. The chrome uses semantic tokens, so keep the user's theme.
+	if (appearance === "light" && current) return current;
 	return THEME_NAME;
 }
 
@@ -219,23 +249,92 @@ export function backgroundEnv(): string | undefined {
 	return process.env.PI_1337_BG ?? configFileSettings().background;
 }
 
-/** Compact transcript rendering follows the redesign unless explicitly disabled. */
-export function polishEnabled(): boolean {
-	const raw = process.env.PI_1337_POLISH?.trim().toLowerCase();
+/**
+ * Shared env-over-file resolution for the `on`/`off` presentation toggles: an
+ * env value of exactly `on`/`off` wins, otherwise the config-file boolean,
+ * otherwise the built-in default.
+ */
+function onOffSetting(env: string | undefined, file: boolean | undefined, fallback: boolean): boolean {
+	const raw = env?.trim().toLowerCase();
 	if (raw === "off") return false;
 	if (raw === "on") return true;
-	return configFileSettings().polish !== false;
+	return file ?? fallback;
+}
+
+/** Compact transcript rendering follows the redesign unless explicitly disabled. */
+export function polishEnabled(): boolean {
+	return onOffSetting(process.env.PI_1337_POLISH, configFileSettings().polish, true);
+}
+
+/** Transient status-row activity label follows the redesign unless explicitly disabled. */
+export function activityEnabled(): boolean {
+	return onOffSetting(process.env.PI_1337_ACTIVITY, configFileSettings().activity, true);
+}
+
+/**
+ * Folding settled exploration rows rides the polished tool rows, so it is off
+ * whenever polish is, whatever its own setting says.
+ */
+export function groupsEnabled(): boolean {
+	return polishEnabled() && onOffSetting(process.env.PI_1337_GROUPS, configFileSettings().groups, true);
+}
+
+/** The end-of-run summary row follows the redesign unless explicitly disabled. */
+export function summaryEnabled(): boolean {
+	return onOffSetting(process.env.PI_1337_SUMMARY, configFileSettings().summary, true);
+}
+
+/** Run state in the terminal title follows the redesign unless explicitly disabled. */
+export function titleEnabled(): boolean {
+	return onOffSetting(process.env.PI_1337_TITLE, configFileSettings().title, true);
+}
+
+/** The subscription quota item of the status row follows the redesign unless explicitly disabled. */
+export function quotaEnabled(): boolean {
+	return onOffSetting(process.env.PI_1337_QUOTA, configFileSettings().quota, true);
+}
+
+/** Box cap when nothing valid is configured: the redesign's original width. */
+export const DEFAULT_MAX_WIDTH = 100;
+/** A cap below this leaves too few columns for the input and its status row to read. */
+export const MIN_MAX_WIDTH = 40;
+
+/** `full`/`0` → no cap; a whole number of columns → itself (raised to the floor); anything else → undefined. */
+function parseMaxWidth(raw: number | string | undefined): number | undefined {
+	if (raw === undefined) return undefined;
+	const text = String(raw).trim().toLowerCase();
+	if (text === "full") return Number.POSITIVE_INFINITY;
+	if (!/^\d+$/.test(text)) return undefined;
+	const columns = Number(text);
+	if (!Number.isSafeInteger(columns)) return undefined;
+	return columns === 0 ? Number.POSITIVE_INFINITY : Math.max(MIN_MAX_WIDTH, columns);
+}
+
+/**
+ * Widest framed box in columns (`Infinity` = no cap). A valid env value wins,
+ * then a valid config-file value, then the default; invalid values are ignored
+ * so a typo can never collapse the editor.
+ */
+export function maxBoxWidth(): number {
+	return parseMaxWidth(process.env.PI_1337_MAX_WIDTH) ?? parseMaxWidth(configFileSettings().maxWidth) ?? DEFAULT_MAX_WIDTH;
 }
 
 /** Every setting after merging env over the config file over the built-in defaults. */
 export interface ResolvedSettings {
 	disable: boolean;
 	polish: boolean;
+	activity: boolean;
+	groups: boolean;
+	summary: boolean;
+	title: boolean;
+	quota: boolean;
 	autoTheme: boolean;
 	theme?: string;
 	thinkingLabel: string;
 	copyKey: string;
 	background?: string;
+	/** Columns; `Infinity` when uncapped. */
+	maxWidth: number;
 }
 
 /** Merge env → config file → defaults into one resolved view. */
@@ -243,10 +342,16 @@ export function resolveSettings(): ResolvedSettings {
 	return {
 		disable: isDisabled(),
 		polish: polishEnabled(),
+		activity: activityEnabled(),
+		groups: groupsEnabled(),
+		summary: summaryEnabled(),
+		title: titleEnabled(),
+		quota: quotaEnabled(),
 		autoTheme: autoThemeEnabled(),
 		theme: process.env.PI_1337_THEME === undefined ? configPalette() : envPalette(),
 		thinkingLabel: hiddenThinkingLabel(),
 		copyKey: copyShortcut(),
 		background: backgroundEnv(),
+		maxWidth: maxBoxWidth(),
 	};
 }

@@ -33,135 +33,134 @@ test("isRuleLine recognizes the degraded '↓ N more' scroll indicator despite f
 	assert.ok(!isRuleLine("──── 12 apples")); // real content with dashes is not a rule
 });
 
-test("layoutRow spans exactly width with left, center, and right segments", () => {
-	const line = layoutRow(" left ", " 12.3k · 6% ", " right ", 40);
+test("layoutRow spans exactly width with a left-aligned left and a right-aligned right", () => {
+	const line = layoutRow(" left ", " right ", 40);
 	assert.equal(visibleWidth(line), 40);
-	assert.ok(line.includes(" left ") && line.includes(" right ") && line.includes(" 12.3k · 6% "));
-	const before = line.indexOf("1") - line.indexOf("left"); // fill exists on the left of center
-	assert.ok(before > 2);
-});
-
-test("layoutRow drops the center segment when there's no room", () => {
-	const line = layoutRow(" left ", " center ", " right ", 16);
-	assert.equal(visibleWidth(line), 16);
-	assert.ok(!line.includes("center"));
-	assert.ok(line.includes("left") && line.includes("right"));
+	assert.ok(line.startsWith(" left ") && line.endsWith(" right "));
 });
 
 test("layoutRow truncates side segments rather than overflowing", () => {
-	const line = layoutRow("a-very-long-left-label", "", "and-right", 16);
+	const line = layoutRow("a-very-long-left-label", "and-right", 16);
 	assert.ok(visibleWidth(line) <= 16);
 });
 
-test("layoutRow bounds long left metadata without starving context and useful right metadata", () => {
+test("layoutRow lets long left metadata yield to useful right metadata", () => {
 	const left = " ~/…/project/src · feature/" + "long-branch/".repeat(8) + " · session-name";
-	const right = [
-		{ pre: "3 agents  anthropic/opus-4-8 · Elite " },
-		{ pre: "3 agents  ", flex: "opus-4-8", post: " · Elite " },
-		{ pre: "3 agents  ", post: "Elite " },
-	];
-
-	for (const width of [80, 120]) {
-		const line = layoutRow(left, "1.2M · 94%", right, width);
-		const plain = stripAnsi(line);
-		assert.equal(visibleWidth(line), width);
-		assert.ok(plain.includes("94%"), `context percentage should survive at ${width} columns: ${plain}`);
-		assert.ok(plain.includes("Elite"), `a useful right-side label should survive at ${width} columns: ${plain}`);
-		assert.ok(plain.includes("opus-4-8"), `the model should remain identifiable at ${width} columns: ${plain}`);
-		assert.ok(plain.includes("…"), `oversized left metadata should be visibly abbreviated at ${width} columns: ${plain}`);
-	}
-});
-
-test("layoutRow lets long left metadata yield to useful right metadata when center is empty", () => {
-	const left = " ~/…/project/src · feature/" + "long-branch/".repeat(8) + " · session-name";
-	for (const width of [80, 120]) {
-		const line = layoutRow(left, "", withPersona, width);
+	for (const width of [40, 80, 120]) {
+		const line = layoutRow(left, withPersona, width);
 		const plain = stripAnsi(line);
 		assert.equal(visibleWidth(line), width);
 		assert.ok(plain.includes("Elite"), `persona should survive at ${width} columns: ${plain}`);
-		assert.ok(plain.includes("opus-4-8"), `model should remain identifiable at ${width} columns: ${plain}`);
+		assert.ok(plain.includes("94%"), `usage should remain at ${width} columns: ${plain}`);
 		assert.ok(plain.includes("…"), `oversized left metadata should be visibly abbreviated at ${width} columns: ${plain}`);
 	}
 });
 
-test("layoutRow drops an unfit center before allowing long left metadata to starve the right", () => {
-	const line = layoutRow("~/project · " + "long-branch/".repeat(8), "this center can never fit here", withPersona, 40);
-	const plain = stripAnsi(line);
-	assert.equal(visibleWidth(line), 40);
-	assert.ok(plain.includes("Elite") && plain.includes("opus-4-8"), `useful right rung should survive: ${plain}`);
-	assert.ok(plain.includes("…"), `oversized left metadata should yield: ${plain}`);
-	assert.ok(!plain.includes("this center"), `unfit center should remain optional: ${plain}`);
-});
-
-test("layoutRow preserves the workspace identity when provider detail becomes affordable", () => {
+test("layoutRow preserves the workspace identity while the right group keeps its widest fitting rung", () => {
 	const left = [
 		{ pre: " …/Sources/pi-persona", flex: " · feature/restore-context-indicator · Fix session resume status" },
 		{ pre: " …/Sources/pi-persona" },
 		{ pre: " …/pi-persona" },
 	];
 	const right = [
-		{ pre: "3 agents  claude-pro-max-native/opus-4-8 · 1337 " },
-		{ pre: "3 agents  ", flex: "opus-4-8", post: " · 1337 " },
-		{ pre: "3 agents  ", post: "1337 " },
+		{ pre: "182.0k · 91% · ~$0.250 · 1337 " },
+		{ pre: "91% · ", flex: "1337", post: " " },
+		{ pre: "91% " },
 	];
 
-	for (const width of [40, 60, 80, 90, 120]) {
-		const line = layoutRow(left, "182.0k · 91% · ~$0.250", right, width);
+	for (const width of [20, 40, 60, 80, 90, 120]) {
+		const line = layoutRow(left, right, width);
 		const plain = stripAnsi(line);
 		assert.equal(visibleWidth(line), width);
 		assert.ok(plain.includes("pi-persona"), `workspace identity should survive at ${width} columns: ${plain}`);
 	}
 });
 
-// The status row's right segment degrades semantically, not char-by-char: the
+// The status row's right group degrades semantically, not char-by-char: the
 // editor hands layoutRow a ladder of candidates (widest first). `flex` marks
-// the model as the only part allowed to trim with `…`; pre/post stay verbatim.
+// the persona as the only part allowed to trim with `…`; pre/post stay verbatim.
 const withPersona = [
-	{ pre: "3 agents  anthropic/opus-4-8 · Elite " }, // full: provider slug + persona
-	{ pre: "3 agents  ", flex: "opus-4-8", post: " · Elite " }, // provider hidden; model may trim
-	{ pre: "3 agents  ", post: "Elite " }, // tightest: persona only
+	{ pre: "1.2M · 94% · ~$0.250 · Elite Operator " }, // full
+	{ pre: "1.2M · 94% · Elite Operator " }, // cost dropped
+	{ pre: "94% · ", flex: "Elite Operator", post: " " }, // tokens dropped; persona may trim
+	{ pre: "94% " }, // tightest: the percentage alone
 ];
 const LEFT = "~/x · main"; // 10 cols
 
-test("layoutRow keeps the full provider slug while it fits", () => {
-	const line = layoutRow(LEFT, "", withPersona, 60);
+test("layoutRow keeps the full right group while it fits", () => {
+	const line = layoutRow(LEFT, withPersona, 60);
 	assert.equal(visibleWidth(line), 60);
-	assert.ok(line.includes("anthropic/opus-4-8") && line.includes("Elite"));
+	assert.ok(line.includes("~$0.250") && line.includes("Elite Operator"));
 });
 
-test("layoutRow hides the provider first when narrowing", () => {
-	const line = layoutRow(LEFT, "", withPersona, 40);
-	assert.equal(visibleWidth(line), 40);
-	assert.ok(!line.includes("anthropic/"));
-	assert.ok(line.includes("opus-4-8") && line.includes("Elite")); // model still whole
+test("layoutRow drops the right group's detail rung by rung when narrowing", () => {
+	const noCost = stripAnsi(layoutRow(LEFT, withPersona, 40));
+	assert.ok(!noCost.includes("~$") && noCost.includes("1.2M · 94% · Elite Operator"));
+	const trimmed = stripAnsi(layoutRow(LEFT, withPersona, 24));
+	assert.equal(visibleWidth(trimmed), 24);
+	assert.ok(!trimmed.includes("1.2M") && trimmed.includes("94% · Elite") && trimmed.includes("…"), trimmed);
+	assert.ok(trimmed.includes(LEFT), "the path stays while the persona trims");
+	const bare = stripAnsi(layoutRow(LEFT, withPersona, 16));
+	assert.ok(bare.endsWith(" 94% ") && !bare.includes("Elite"), bare);
 });
 
-test("layoutRow then trims the model with … keeping the persona intact", () => {
-	const line = layoutRow(LEFT, "", withPersona, 36);
-	assert.equal(visibleWidth(line), 36);
-	const plain = stripAnsi(line);
-	assert.ok(!plain.includes("opus-4-8")); // model no longer whole …
-	assert.ok(plain.includes("…")); // … but trimmed, not dropped
-	assert.ok(plain.includes("Elite") && plain.includes(LEFT)); // persona + path untouched
-});
-
-test("layoutRow finally keeps the path left and the persona right, model hidden", () => {
-	const line = layoutRow(LEFT, "", withPersona, 30);
-	assert.equal(visibleWidth(line), 30);
-	const plain = stripAnsi(line);
-	assert.ok(!plain.includes("opus") && !plain.includes("…")); // model gone entirely
-	assert.ok(plain.includes("Elite") && plain.includes(LEFT));
-});
-
-test("layoutRow without a persona keeps trimming the model as the last resort", () => {
-	const noPersona = [{ pre: "anthropic/opus-4-8 " }, { flex: "opus-4-8", post: " " }];
-	const line = layoutRow("~/x", "", noPersona, 8);
+test("layoutRow keeps trimming the last rung's flex below the usual floor", () => {
+	const ladder = [{ pre: "anthropic/opus-4-8 " }, { flex: "opus-4-8", post: " " }];
+	const line = layoutRow("~/x", ladder, 8);
 	assert.equal(visibleWidth(line), 8);
 	assert.ok(stripAnsi(line).includes("op…")); // below the usual floor: last candidate still trims
 });
 
+test("a rung with its own minFlex is whole, trimmed to no fewer than that, or skipped, as the last rung too", () => {
+	const ladder = [{ pre: "repo · ", flex: "review session", minFlex: 10 }, { pre: "repo" }];
+	assert.equal(resolveSegment(ladder, 21), "repo · review session");
+	assert.equal(stripAnsi(resolveSegment(ladder, 20)), "repo · review sessi…");
+	assert.equal(stripAnsi(resolveSegment(ladder, 17)), "repo · review se…", "ten columns of the name: nine characters and the ellipsis");
+	assert.equal(resolveSegment(ladder, 16), "repo", "one column short of its floor the rung is skipped whole");
+	// A flex part no wider than its floor cannot trim at all.
+	assert.equal(resolveSegment([{ pre: "repo · ", flex: "wip", minFlex: 10 }, { pre: "repo" }], 9), "repo");
+	// The last rung normally trims to a single column; with a floor it does not.
+	const overlay = [{ pre: " ", flex: "Running npm test…", minFlex: 8 }];
+	for (let width = 6; width <= 40; width++) {
+		const plain = stripAnsi(layoutRow([{ pre: " …/x" }], "", width, overlay));
+		assert.equal(visibleWidth(plain), width);
+		// The overlay resolves against its cells less one, after its own leading space.
+		if (width - 2 >= 8) assert.match(plain, /^ Running.*… /, `@${width}: ${plain}`);
+		else assert.equal(plain.trimEnd(), " …/x", `@${width}: too few cells keep the row as it was`);
+		assert.doesNotMatch(plain, /^ R[a-z]{0,5}…/, `@${width}: never a stub of the label: ${plain}`);
+	}
+});
+
+test("a last rung with minFlex is never hard-truncated: resolveSegment and fitSegment agree it is absent below its floor", () => {
+	const floored = [{ pre: " ", flex: "Running npm test…", post: " 14s", minFlex: 8 }];
+	const full = " Running npm test… 14s";
+	assert.equal(resolveSegment(floored, full.length), full);
+	// Trimmed down to exactly its floor: pre (1) + eight columns of flex + post (4).
+	assert.equal(stripAnsi(resolveSegment(floored, 13)), " Running… 14s");
+	for (let avail = 1; avail < 13; avail++) assert.equal(resolveSegment(floored, avail), "", `@${avail}: absent, not a stub`);
+	// The same rung without a floor keeps the old contract: it trims to one column, then hard-truncates.
+	const free = [{ pre: " ", flex: "Running npm test…", post: " 14s" }];
+	assert.equal(stripAnsi(resolveSegment(free, 6)), " … 14s");
+	for (let avail = 1; avail < 6; avail++) {
+		const out = resolveSegment(free, avail);
+		assert.equal(visibleWidth(out), avail, `@${avail}: hard-truncated to fit`);
+	}
+	// A flex part shorter than its floor cannot trim: whole or absent.
+	const short = [{ pre: "repo · ", flex: "wip", minFlex: 10 }];
+	assert.equal(resolveSegment(short, 10), "repo · wip");
+	for (let avail = 1; avail < 10; avail++) assert.equal(resolveSegment(short, avail), "", `@${avail}`);
+	// Only the last rung decides: a floored rung above an unfloored last one still falls through to it.
+	assert.equal(stripAnsi(resolveSegment([...floored, { pre: "repo" }], 3)), "re…");
+	// In a row, an absent floored segment leaves its cells blank and the row exact.
+	for (let width = 4; width <= 30; width++) {
+		const row = layoutRow(floored, "", width);
+		assert.equal(visibleWidth(row), width, `@${width}`);
+		assert.doesNotMatch(stripAnsi(row), /^ R[a-z]{0,5}…/, `@${width}: never a stub: ${row}`);
+	}
+});
+
 test("resolveSegment hard-truncates the last candidate when nothing fits", () => {
-	const out = resolveSegment([{ pre: "3 agents  ", post: "Elite " }], 6);
+	const out = resolveSegment([{ pre: "94% · ", post: "Elite " }], 6);
 	assert.ok(visibleWidth(out) <= 6);
 	assert.equal(resolveSegment(withPersona, 0), "");
 });
@@ -320,7 +319,7 @@ test("colored two-row status rows exactly fill the host-measured spinner slot at
 test("two-row logo uses status slot for one input row and content row for multiline input", () => {
 	const boxWidth = 50;
 	const ew = editorWidthFor(boxWidth, 3);
-	const options = { boxWidth, leftMargin: 0, style: ROUNDED, border: id, spinnerColumns: 3, spinnerHeight: 2, spinner: " ▲ ", spinnerRows: [" ▲ ", "△ △"], statusLeft: "WORKSPACE", statusCenter: "USAGE", statusRight: "MODEL" };
+	const options = { boxWidth, leftMargin: 0, style: ROUNDED, border: id, spinnerColumns: 3, spinnerHeight: 2, spinner: " ▲ ", spinnerRows: [" ▲ ", "△ △"], statusLeft: "WORKSPACE", statusRight: "USAGE", borderLabel: [{ pre: "anthropic/opus-4-8 · high" }] };
 	const single = frameEditor(["─".repeat(ew), " input".padEnd(ew), "─".repeat(ew)], options);
 	assert.equal(stripAnsi(single[1]).slice(-5, -1), " ▲  ");
 	assert.equal(stripAnsi(single[2]).slice(-5, -1), "△ △ ");
@@ -388,4 +387,237 @@ test("frameEditor preserves autocomplete after Pi's width-4 truncated scroll rul
 	assert.ok(out.some((line) => line.includes("zz")), "autocomplete row survives below the truncated rule");
 	assert.ok(!out.some((line) => line.includes("─...")), "the truncated rule itself is still removed");
 	for (const line of out) assert.equal(visibleWidth(line), 10);
+});
+
+// Overlay: left uses only lowercase/punctuation; the right carries digits or
+// uppercase, so the first such column marks where the protected suffix starts.
+const PROTECTED = /[0-9A-Z$%|]/;
+const OVERLAY_LEFTS: (string | { pre?: string; flex?: string; post?: string }[])[] = [
+	" ~/…/work/repo · main · review",
+	" ~/projects/" + "very-long-branch-name/".repeat(4),
+	[{ pre: " ~/work/repo", flex: " · main · review" }, { pre: " ~/work/repo" }, { pre: " …/repo" }],
+];
+const OVERLAY_RIGHTS: (string | { pre?: string; flex?: string; post?: string }[])[] = [
+	"70% ",
+	[{ pre: "[####-] 70.0K/100K · 70% · $0.25 +$0.10 · ELITE " }, { pre: "70.0K · 70% · $0.25 · ELITE " }, { pre: "70% · ", flex: "ELITE", post: " " }, { pre: "70% " }],
+];
+const OVERLAYS = [
+	[{ pre: " ", flex: "Reading a.ts…" }],
+	[{ pre: " ", flex: `Running ${"npm test --watch ".repeat(12)}…` }],
+	[{ pre: " ", flex: "Running npm test…", post: " +2" }],
+];
+
+test("an overlay never moves the right group at any width", () => {
+	let shownSomewhere = 0;
+	for (const left of OVERLAY_LEFTS) {
+		for (const right of OVERLAY_RIGHTS) {
+			for (const overlay of OVERLAYS) {
+				for (let width = 10; width <= 160; width++) {
+					// Truncation may emit SGR resets; these shapes are one code unit per column once stripped.
+					const base = stripAnsi(layoutRow(left, right, width));
+					const lit = stripAnsi(layoutRow(left, right, width, overlay));
+					const shape = `${JSON.stringify(left)} / ${JSON.stringify(right)} @${width}`;
+					assert.equal(visibleWidth(base), width, shape);
+					assert.equal(visibleWidth(lit), width, `overlay row is exactly width: ${shape}`);
+					const found = base.search(PROTECTED);
+					const rightStart = found === -1 ? base.length : found;
+					assert.equal(lit.slice(rightStart), base.slice(rightStart), `right moved: ${shape}\n${base}\n${lit}`);
+					if (lit.startsWith(` ${overlay[0].flex.slice(0, 4)}`)) {
+						shownSomewhere++;
+						assert.equal(lit.charAt(rightStart - 1), " ", `one space separates the overlay: ${shape}\n${lit}`);
+					}
+				}
+			}
+		}
+	}
+	assert.ok(shownSomewhere > 1000, `the sweep must exercise visible overlays (${shownSomewhere})`);
+});
+
+test("a colored overlay keeps the colored right group byte-identical", () => {
+	const color = (s: string) => `\u001b[38;2;1;2;3m${s}\u001b[39m`;
+	const left = [{ pre: color(" ~/work/repo"), flex: color(" · main") }, { pre: color(" ~/work/repo") }];
+	const right = [{ pre: color("70.0K · 70% · $0.25 ") }, { pre: color("70% ") }];
+	for (let width = 20; width <= 120; width++) {
+		const base = layoutRow(left, right, width);
+		const lit = layoutRow(left, right, width, [{ pre: " ", flex: color("Running npm test…"), post: color(" +2") }]);
+		assert.equal(visibleWidth(lit), width);
+		const anchor = base.includes(color("70.0K · 70% · $0.25 ")) ? color("70.0K · 70% · $0.25 ") : color("70% ");
+		const at = base.indexOf(anchor);
+		assert.notEqual(at, -1);
+		assert.ok(lit.endsWith(base.slice(at)), `width ${width}: suffix changed`);
+		assert.equal(visibleWidth(lit.slice(0, lit.length - (base.length - at))), visibleWidth(base.slice(0, at)), `width ${width}: suffix shifted`);
+	}
+});
+
+test("a long overlay trims its flex with … and keeps its post", () => {
+	const overlay = [{ pre: " ", flex: `Running ${"x".repeat(100)}…`, post: " +2" }];
+	const line = stripAnsi(layoutRow(" ~/work/repo", "OPUS-4-8 ", 40, overlay));
+	assert.equal(visibleWidth(line), 40);
+	assert.match(line, /^ Running x+… \+2 +OPUS-4-8 $/);
+	assert.ok(!line.includes("repo"), "the overlay takes the workspace's cells");
+});
+
+test("an overlay too narrow to show leaves the normal left segment", () => {
+	const overlay = [{ pre: " ", flex: "Running npm test…", post: " +2" }];
+	// Region 9 cells → 8 for the overlay, one short of " " + 5 flex cells + " +2".
+	assert.equal(layoutRow(" ~/repo", "OPUS-4-8 ", 18, overlay), layoutRow(" ~/repo", "OPUS-4-8 ", 18));
+	assert.equal(stripAnsi(layoutRow(" ~/repo", "OPUS-4-8 ", 19, overlay)), " Runn… +2 OPUS-4-8 ");
+	assert.equal(layoutRow("", "", 1, overlay), " ");
+	assert.equal(layoutRow(" ~/repo", "OPUS ", 20, []), layoutRow(" ~/repo", "OPUS ", 20), "an empty ladder is no overlay");
+	// Rungs with no flex part (the run clock) are whole or nothing: never a clipped "Worki…".
+	const clock = [{ pre: " Working… 45s" }, { pre: " Working…" }];
+	const seen = new Set<string>();
+	for (let width = 1; width <= 60; width++) {
+		const plain = layoutRow(" ~/work/repo", "OPUS-4-8 ", width);
+		const lit = layoutRow(" ~/work/repo", "OPUS-4-8 ", width, clock);
+		const shown = lit.startsWith(" Working… 45s ") ? "timed" : lit.startsWith(" Working… ") ? "bare" : "none";
+		seen.add(shown);
+		if (shown === "none") assert.equal(lit, plain, `@${width}: no room leaves the row exactly as it was`);
+		assert.equal(visibleWidth(lit), width);
+		assert.doesNotMatch(lit, /W[a-z]*…(?<!Working…)|Working… \d*…/, `@${width}: ${lit}`);
+	}
+	assert.deepEqual([...seen].sort(), ["bare", "none", "timed"], "every rung appears in the sweep");
+});
+
+test("frameEditor paints statusOverlay over the workspace without moving the rest", () => {
+	const ew = editorWidthFor(60);
+	const raw = ["─".repeat(ew), " hi".padEnd(ew), "─".repeat(ew)];
+	const options = { boxWidth: 60, leftMargin: 0, style: ROUNDED, border: id, statusLeft: " ~/work/repo", statusRight: "70% | $0.25 ", borderLabel: [{ pre: "OPUS" }] };
+	const idle = frameEditor(raw, options);
+	const busy = frameEditor(raw, { ...options, statusOverlay: [{ pre: " ", flex: "Running npm test…", post: " +1" }] });
+	assert.deepEqual(busy.slice(0, -2), idle.slice(0, -2));
+	assert.equal(busy.at(-1), idle.at(-1));
+	const status = busy.at(-2)!;
+	assert.ok(status.startsWith("│ Running npm test… +1 "));
+	const tail = idle.at(-2)!.slice(idle.at(-2)!.indexOf("70%"));
+	assert.ok(status.endsWith(tail));
+	assert.equal(visibleWidth(status), 60);
+	const none = frameEditor(raw, { boxWidth: 60, leftMargin: 0, style: ROUNDED, border: id, statusOverlay: [{ flex: "Running…" }] });
+	assert.equal(none.length, 3, "an overlay alone never adds a status row");
+});
+
+test("the sibling count is the first thing to go: it never outlives the label", () => {
+	const left = [{ pre: " ~/work/repo", flex: " · main" }, { pre: " …/repo" }];
+	const named = { pre: " ", flex: "Running npm test…" };
+	const counted = [{ ...named, post: " +2" }, named];
+	let exercised = 0;
+	for (let width = 20; width <= 120; width++) {
+		const base = stripAnsi(layoutRow(left, "70.0K | 70% ", width));
+		const rightStart = base.indexOf("70.0K");
+		const lit = stripAnsi(layoutRow(left, "70.0K | 70% ", width, counted));
+		const bareFits = visibleWidth(" Running npm test…") <= rightStart - 1;
+		const countedFits = visibleWidth(" Running npm test… +2") <= rightStart - 1;
+		if (bareFits && !countedFits) {
+			exercised++;
+			assert.ok(lit.startsWith(" Running npm test… ") && !lit.includes("+2"), `width ${width}: the count yields first\n${lit}`);
+		}
+		if (countedFits) assert.ok(lit.startsWith(" Running npm test… +2 "), `width ${width}: both fit\n${lit}`);
+	}
+	assert.ok(exercised > 0, "the sweep must hit the widths where only the bare label fits");
+	// Too narrow for either rung whole: the count goes, the label trims.
+	const cramped = stripAnsi(layoutRow(" ~/repo", "OPUS-4-8 ", 22, counted));
+	assert.equal(cramped, " Running np… OPUS-4-8 ");
+});
+
+// ---- the top border's one label ----------------------------------------------
+
+const BOX_RAW = (boxWidth: number) => {
+	const ew = editorWidthFor(boxWidth);
+	return ["─".repeat(ew), " hi".padEnd(ew), "─".repeat(ew)];
+};
+const tint = (s: string) => `\u001b[38;2;9;8;7m${s}\u001b[39m`;
+const muted = (s: string) => `\u001b[2m${s}\u001b[22m`;
+const LABEL_LADDERS: Record<string, { pre?: string; flex?: string; post?: string }[]> = {
+	short: [{ pre: "gpt" }],
+	long: [{ pre: "openai/gpt-6.1-sol · xhigh" }, { flex: "gpt-6.1-sol", post: " · xhigh" }, { flex: "gpt-6.1-sol" }],
+	cjk: [{ pre: "提供者/模型名称-界 · 高" }, { flex: "模型名称-界", post: " · 高" }, { flex: "模型名称-界" }],
+	ansi: [{ pre: `${muted("openai/")}${tint("gpt-6.1-sol")}${muted(" · ")}${tint("xhigh")}` }, { flex: tint("gpt-6.1-sol"), post: `${muted(" · ")}${tint("xhigh")}` }, { flex: tint("gpt-6.1-sol") }],
+	emoji: [{ pre: "🧑‍💻/model-🎯 · max" }, { flex: "model-🎯" }],
+	unfit: [{ pre: "x".repeat(300) }],
+};
+
+test("the top border is exactly the box width for every width and label ladder, host ruler included", () => {
+	for (const metrics of ["mirror", "host"] as const) {
+		if (metrics === "host") useTerminalMetrics({ visibleWidth: hostVisibleWidth, truncateToWidth: hostTruncateToWidth });
+		try {
+			let labelled = 0;
+			for (const [name, ladder] of Object.entries(LABEL_LADDERS)) {
+				for (let boxWidth = 8; boxWidth <= 200; boxWidth++) {
+					for (const border of [id, muted]) {
+						const out = frameEditor(BOX_RAW(boxWidth), { boxWidth, leftMargin: 3, style: ROUNDED, border, borderLabel: ladder });
+						if (out.length === 0) continue; // below the frame's own minimum
+						const at = `${metrics} ${name} @${boxWidth}`;
+						for (const row of out) assert.equal(hostVisibleWidth(row), boxWidth + 3, `${at}: ${JSON.stringify(row)}`);
+						const top = stripAnsi(out[0]).slice(3);
+						if (/[^─╭╮]/.test(top)) {
+							labelled++;
+							assert.match(top, /^╭─{2,} \S.*\S ──╮$/u, `${at}: corner, ≥2 rules, space, label, space, two rules, corner: ${top}`);
+						} else assert.equal(top, `╭${"─".repeat(boxWidth - 2)}╮`, `${at}: plain`);
+					}
+				}
+			}
+			assert.ok(labelled > 1500, `the sweep must exercise labelled borders (${labelled})`);
+		} finally {
+			useTerminalMetrics();
+		}
+	}
+});
+
+test("the label sits between single spaces with exactly two rule cells before the corner", () => {
+	const out = frameEditor(BOX_RAW(40), { boxWidth: 40, leftMargin: 0, style: ROUNDED, border: id, borderLabel: [{ pre: "openai/gpt-6.1-sol · xhigh" }] });
+	assert.equal(out[0], `╭${"─".repeat(8)} openai/gpt-6.1-sol · xhigh ──╮`);
+	// The narrowest box that still keeps two rule cells on the left: 26 label + 6 fixed + 2.
+	const tight = frameEditor(BOX_RAW(34), { boxWidth: 34, leftMargin: 0, style: ROUNDED, border: id, borderLabel: [{ pre: "openai/gpt-6.1-sol · xhigh" }] });
+	assert.equal(tight[0], "╭── openai/gpt-6.1-sol · xhigh ──╮");
+	const over = frameEditor(BOX_RAW(33), { boxWidth: 33, leftMargin: 0, style: ROUNDED, border: id, borderLabel: [{ pre: "openai/gpt-6.1-sol · xhigh" }] });
+	assert.equal(over[0], `╭${"─".repeat(31)}╮`, "one column short of the left floor → the plain rule");
+	// Only the rule pieces are border-colored; the label keeps its own colors.
+	const colored = frameEditor(BOX_RAW(40), { boxWidth: 40, leftMargin: 0, style: ROUNDED, border: muted, borderLabel: LABEL_LADDERS.ansi });
+	assert.equal(colored[0], `${muted(`╭${"─".repeat(8)}`)} ${LABEL_LADDERS.ansi[0].pre} ${muted("──╮")}`);
+});
+
+test("the border picks the widest rung that fits and trims only the flex part", () => {
+	const ladder = LABEL_LADDERS.long;
+	const top = (boxWidth: number) => stripAnsi(frameEditor(BOX_RAW(boxWidth), { boxWidth, leftMargin: 0, style: ROUNDED, border: id, borderLabel: ladder })[0]);
+	assert.ok(top(34).includes(" openai/gpt-6.1-sol · xhigh "));
+	assert.ok(top(33).includes(" gpt-6.1-sol · xhigh ") && !top(33).includes("openai"), top(33));
+	assert.ok(top(27).includes(" gpt-6.1-sol · xhigh "), top(27));
+	assert.match(top(26), / gpt-6\.1-s… · xhigh ──╮$/, "the model trims while the level stays");
+	// The flex floor (5 columns) reached: the level yields and the model stands alone.
+	assert.match(top(20), /─ gpt-6\.1-sol ──╮$/);
+	assert.equal(top(14), "╭── gpt-6… ──╮", "the last rung trims below the floor");
+	assert.equal(top(10), "╭── g… ──╮");
+	const widths = new Set<number>();
+	for (let w = 10; w <= 120; w++) widths.add(visibleWidth(top(w)) - w);
+	assert.deepEqual([...widths], [0]);
+});
+
+test("no fitting rung leaves the border byte-identical to a frame without a label", () => {
+	for (let boxWidth = 8; boxWidth <= 120; boxWidth++) {
+		const base = { boxWidth, leftMargin: 2, style: ROUNDED, border: muted, statusLeft: " ~/x", statusRight: "70% " };
+		const plain = frameEditor(BOX_RAW(boxWidth), base);
+		assert.deepEqual(frameEditor(BOX_RAW(boxWidth), { ...base, borderLabel: LABEL_LADDERS.unfit }), plain, `@${boxWidth}`);
+		assert.deepEqual(frameEditor(BOX_RAW(boxWidth), { ...base, borderLabel: [] }), plain, `empty ladder @${boxWidth}`);
+		assert.deepEqual(frameEditor(BOX_RAW(boxWidth), { ...base, borderLabel: undefined }), plain);
+		// A label with no visible content is no label: never "╭──────  ──╮".
+		for (const blank of [[{ flex: muted("") }], [{ pre: "   " }], [{ pre: muted(""), post: " " }], [{ flex: "" }]]) {
+			assert.deepEqual(frameEditor(BOX_RAW(boxWidth), { ...base, borderLabel: blank }), plain, `blank ${JSON.stringify(blank)} @${boxWidth}`);
+		}
+		// Everything below the top edge is unaffected by any label.
+		assert.deepEqual(frameEditor(BOX_RAW(boxWidth), { ...base, borderLabel: LABEL_LADDERS.long }).slice(1), plain.slice(1), `body @${boxWidth}`);
+	}
+	// A last rung that could only show a lone "…" is no label either.
+	const lone = frameEditor(BOX_RAW(9), { boxWidth: 9, leftMargin: 0, style: ROUNDED, border: id, spinnerColumns: 1, borderLabel: [{ flex: "model" }] });
+	assert.equal(lone[0], `╭${"─".repeat(7)}╮`);
+});
+
+test("the bottom border stays plain and the label never enters the body, scroll markers or autocomplete rows", () => {
+	const ew = editorWidthFor(40);
+	const raw = [`── ↑ 3 more ${"─".repeat(ew - 12)}`, " one".padEnd(ew), " two".padEnd(ew), `── ↓ 7 more ${"─".repeat(ew - 12)}`, "  /init".padEnd(ew)];
+	const out = frameEditor(raw, { boxWidth: 40, leftMargin: 0, style: ROUNDED, border: id, prompt: "›", statusLeft: "~", borderLabel: LABEL_LADDERS.long });
+	assert.match(out[0], / openai\/gpt-6\.1-sol · xhigh ──╮$/);
+	assert.ok(out[1].includes("↑") && out[2].includes("↓"));
+	assert.equal(out[3], `╰${"─".repeat(38)}╯`);
+	assert.ok(out[4].includes("/init"), "autocomplete keeps its row below the box");
+	assert.equal(out.filter(row => row.includes("gpt")).length, 1);
 });

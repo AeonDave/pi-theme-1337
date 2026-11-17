@@ -96,6 +96,7 @@ function hueDistance(a: number, b: number): number {
 test("the bundled palettes ship", () => {
 	assert.deepEqual(files.sort(), [
 		"1337-amber.json",
+		"1337-cosmos.json",
 		"1337-cyber.json",
 		"1337-cyberpunk-2077-edgerunner.json",
 		"1337-cyberpunk-2077.json",
@@ -203,7 +204,7 @@ test("the default CRT palette and Poison retain distinct green families and acce
 	assert.ok(hueDistance(crtAccentHue, poisonAccentHue) >= 80, "default and Poison accents stay in separate hue families");
 });
 
-test("the eleven chromatic palettes stay vivid: broad RGB range and at least 60% HSL saturation", () => {
+test("the twelve chromatic palettes stay vivid: broad RGB range and at least 60% HSL saturation", () => {
 	for (const [file, theme] of themes) {
 		if (file === "1337-skynet.json") continue; // Skynet follows Termovision's white HUD on red-tinted black.
 		const hex = resolveColor(theme, "text");

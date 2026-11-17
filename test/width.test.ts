@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { stripAnsi, truncateToWidth, useTerminalMetrics, visibleWidth } from "../src/width.ts";
+import { clipTextRows, isImageProtocolLine, stripAnsi, truncateToWidth, useTerminalMetrics, visibleWidth } from "../src/width.ts";
 
 const RED = "\x1b[38;2;255;0;0m";
 const RST = "\x1b[39m";
@@ -123,4 +123,18 @@ test("useTerminalMetrics swaps in the host's measurement and restores the fallba
 		useTerminalMetrics();
 	}
 	assert.equal(visibleWidth("anything"), 8);
+});
+
+test("clipTextRows clips text rows and leaves image-protocol rows byte-identical", () => {
+	const kitty = "_Ga=T,f=100,m=0;" + "A".repeat(200) + "\\";
+	const iterm2 = "[1A]1337;File=inline=1;width=40:" + "B".repeat(200) + "";
+	assert.equal(isImageProtocolLine(kitty), true);
+	assert.equal(isImageProtocolLine(iterm2), true, "a cursor-up prefix still marks an iTerm2 row");
+	assert.equal(isImageProtocolLine("plain text"), false);
+	const rows = clipTextRows([`${RED}abcdefghij${RST}`, kitty, "ok", iterm2], 4);
+	assert.equal(stripAnsi(rows[0]!), "abcd", "no ellipsis");
+	assert.ok(visibleWidth(rows[0]!) <= 4);
+	assert.equal(rows[1], kitty);
+	assert.equal(rows[2], "ok");
+	assert.equal(rows[3], iterm2);
 });

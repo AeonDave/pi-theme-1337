@@ -12,20 +12,12 @@
  */
 
 import { sanitizeArtLine } from "./format.ts";
-import { truncateToWidth, visibleWidth } from "./width.ts";
+import { isImageProtocolLine, truncateToWidth, visibleWidth } from "./width.ts";
 
 export interface AvatarLayoutOptions {
 	align?: "left" | "center";
 	/** Cell width reserved by Pi's image renderer; ignored for textual fallbacks. */
 	imageColumns?: number;
-}
-
-// Pi's image-line classifier is internal, so keep its two protocol signatures
-// here. iTerm2's multi-row output can prepend cursor-up before the OSC payload.
-function isImageRow(line: string): boolean {
-	const kitty = "\x1b_G";
-	const iterm2 = "\x1b]1337;File=";
-	return line.startsWith(kitty) || line.startsWith(iterm2) || line.includes(kitty) || line.includes(iterm2);
 }
 
 /**
@@ -40,7 +32,7 @@ export function layoutAvatarRows(lines: readonly string[], width: number, option
 	const imageSpan = options.imageColumns !== undefined && Number.isFinite(options.imageColumns) && options.imageColumns > 0
 		? Math.ceil(options.imageColumns)
 		: columns;
-	const rows = lines.map((line) => ({ line, image: isImageRow(line) }));
+	const rows = lines.map((line) => ({ line, image: isImageProtocolLine(line) }));
 	const span = rows.reduce((max, row) => Math.max(max, row.image ? imageSpan : visibleWidth(row.line)), 0);
 	const pad = options.align === "center" ? Math.max(0, Math.floor((columns - span) / 2)) : 0;
 	const room = columns - pad;

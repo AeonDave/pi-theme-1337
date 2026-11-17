@@ -213,6 +213,20 @@ export function stripAnsi(text: string): string {
 }
 
 /**
+ * True for a row carrying a Kitty or iTerm2 inline-image payload. Pi's own
+ * classifier is internal, so its two protocol signatures live here once. Such
+ * rows are sized in image cells: never measure or clip them as text.
+ */
+export function isImageProtocolLine(line: string): boolean {
+	return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
+}
+
+/** Clip text rows to `width` without an ellipsis; image-protocol rows pass through untouched. */
+export function clipTextRows(lines: string[], width: number): string[] {
+	return lines.map(line => isImageProtocolLine(line) ? line : truncateToWidth(line, width, ""));
+}
+
+/**
  * Pure box geometry shared by `FramedEditor.render`. From the terminal `width`,
  * the cap `maxWidth`, and the side `minMargin`, decide the outer box width, the
  * centering left margin, and whether the terminal is simply too narrow to frame

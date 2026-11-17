@@ -9,3 +9,6 @@ nul
 # OS / editor cruft
 .DS_Store
 Thumbs.db
+
+# Agent scratch space
+/.scratch/

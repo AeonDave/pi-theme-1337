@@ -28,7 +28,7 @@
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { editorWidthFor, frameEditor, ROUNDED } from "../src/frame.ts";
-import { chooseBox, useTerminalMetrics } from "../src/width.ts";
+import { chooseBox, stripAnsi, useTerminalMetrics } from "../src/width.ts";
 
 const local = (p: string) => new URL(p, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const entry = process.env.PI_TUI ?? `${local("../../pi/")}packages/tui/src/index.ts`;
@@ -98,12 +98,20 @@ const CORPUS = [
 	"parola ".repeat(30),
 ];
 
+const BORDER_LABELS = [
+	[{ pre: "\x1b[2manthropic/\x1b[22m\x1b[36mopus-4-8\x1b[39m\x1b[2m · \x1b[22m\x1b[35mxhigh\x1b[39m" }, { flex: "\x1b[36mopus-4-8\x1b[39m", post: "\x1b[2m · \x1b[22m\x1b[35mxhigh\x1b[39m" }, { flex: "\x1b[36mopus-4-8\x1b[39m" }],
+	[{ pre: "提供者/模型名称-界 · high" }, { flex: "模型名称-界", post: " · high" }, { flex: "模型名称-界" }],
+	[{ pre: "openrouter/नमस्ते-मॉडल · max" }, { flex: "नमस्ते-मॉडल" }],
+	[{ pre: "🧑‍💻/model-🎯 · low" }, { flex: "model-🎯" }],
+	[{ flex: "gpt-6.1-sol-ultra-long-model-identifier-" + "x".repeat(80) }],
+];
 const MAX_WIDTH = 100;
 const MIN_MARGIN = 2;
 const rnd = (n: number) => Math.floor(Math.random() * n);
 
-function sweep(): { cases: number; bad: number; overflow: number; examples: string[] } {
+function sweep(): { cases: number; labelled: number; bad: number; overflow: number; examples: string[] } {
 	let cases = 0;
+	let labelled = 0;
 	let bad = 0;
 	let overflow = 0;
 	const examples: string[] = [];
@@ -133,10 +141,17 @@ function sweep(): { cases: number; bad: number; overflow: number; examples: stri
 				{ pre: " ~/…/project/ctf" },
 				{ pre: " …/ctf" },
 			],
-			statusCenter: i % 2 === 0 ? "60.0k · 22%" : "182.0k · 91% · ~$0.250",
-			statusRight: [{ pre: "anthropic/opus-4-8 · Elite " }, { pre: "Elite " }],
+			statusRight: i % 2 === 0 ? "60.0k · 22% " : [
+				{ pre: "[▰▰▰▰▰] 182.0k/200k · 91% · ~$0.250 +$0.12 · 💻 Dev " },
+				{ pre: "182.0k · 91% · ~$0.250 · 💻 Dev " },
+				{ pre: "91% · ", flex: "💻 Dev", post: " " },
+				{ pre: "91% " },
+			],
+			// The top border's one label, in shapes terminals size differently.
+			borderLabel: BORDER_LABELS[i % BORDER_LABELS.length],
 		});
 		cases++;
+		if (/[^─╭╮ ]/.test(stripAnsi(rows[0] ?? ""))) labelled++;
 
 		const want = leftMargin + boxWidth;
 		for (const row of rows) {
@@ -149,11 +164,11 @@ function sweep(): { cases: number; bad: number; overflow: number; examples: stri
 			}
 		}
 	}
-	return { cases, bad, overflow, examples };
+	return { cases, labelled, bad, overflow, examples };
 }
 
 const report = (label: string, r: ReturnType<typeof sweep>) => {
-	console.log(`${label}: ${r.cases} framed renders, ${r.bad} mis-measured rows, ${r.overflow} wider than the terminal`);
+	console.log(`${label}: ${r.cases} framed renders (${r.labelled} with a border label), ${r.bad} mis-measured rows, ${r.overflow} wider than the terminal`);
 	for (const line of r.examples) console.log(line);
 };
 

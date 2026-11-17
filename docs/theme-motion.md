@@ -14,6 +14,7 @@ timer.
 | `1337-cyberpunk-2077` | Electric ladder bars: `▁▃▅` → `▃▅▇` → `▅▇▁` → `▇▁▃` → `▅▂▆` → `▃▅▇` | 140 ms | 3 |
 | `1337-cyberpunk-2077-edgerunner` | Electric ladder bars: `▁▃▅` → `▃▅▇` → `▅▇▁` → `▇▁▃` → `▅▂▆` → `▃▅▇` | 140 ms | 3 |
 | `1337-neon` | Diamonds: `◇ ◈ ◆ ◈` | 160 ms | 1 |
+| `1337-cosmos` | Twinkling star: `⋆ ✧ ✦ ✧` | 180 ms | 1 |
 | `1337-poison` | Half circles: `◐ ◓ ◑ ◒` | 140 ms | 1 |
 | `1337-magma` | Heat bars: `▁▃▆` | 120 ms | 3 |
 | `1337-fallout` | Pixel rotation: `▖ ▘ ▝ ▗` | 150 ms | 1 |
