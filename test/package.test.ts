@@ -12,7 +12,7 @@ const lock = JSON.parse(readFileSync(resolve(root, "package-lock.json"), "utf8")
 };
 
 test("package identity is aligned in the manifest and root lock entry", () => {
-	assert.equal(manifest.name, "pi-theme-1337");
+	assert.equal(manifest.name, "@aeondave/pi-theme-1337");
 	assert.equal(lock.name, manifest.name);
 	assert.equal(lock.packages[""].name, manifest.name);
 	assert.equal(lock.version, manifest.version);

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1] - 2026-11-18
+
+- Publish to npm as `@aeondave/pi-theme-1337`: install with
+  `pi install npm:@aeondave/pi-theme-1337`. The Git source keeps working.
+- Replace the banner with real Pi sessions in three palettes above a strip of all thirteen, and add
+  an animation that shows one session in every palette. The README opens with install and a short
+  summary; the full feature list is one click away.
+- `npm run test:parity` measures against the installed development `pi-tui` by default instead of
+  needing a `../pi` checkout, which failed outright when that checkout had no dependencies.
+- Run typecheck, tests, the parity sweep and the dependency audit in CI on Linux, macOS and
+  Windows, with Dependabot keeping the two Pi development packages aligned.
+
 ## [0.5.0] - 2026-11-17
 
 - Add Cosmos (`1337-cosmos`, alias `cosmos`): starlit mauve text and pastel

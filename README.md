@@ -1,11 +1,56 @@
-# pi-theme-1337
+<p align="center">
+  <img src="assets/banner.png" alt="pi-theme-1337: the same Pi session in the phosphor, neon and cyberpunk palettes, above a strip of all thirteen palettes">
+</p>
 
-![Illustration of Phosphor, Poison, Cyberpunk 2077, and Edgerunner palettes](assets/banner.png)
+<h3 align="center">Thirteen dark palettes and a framed terminal editor for Pi.</h3>
 
-**Thirteen dark palettes and a framed terminal editor for [Pi](https://github.com/earendil-works/pi-mono).**
-The pi-theme-1337 package combines diverse CRT, cyberpunk, synthwave, and HUD-inspired palettes with an extension that moves the editor and useful session status into a centered frame.
+<p align="center">
+  CRT, cyberpunk, synthwave and HUD-inspired palettes, with an extension that moves the editor<br>
+  and the session status you actually read into one centered frame.
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#what-it-adds">What it adds</a> ·
+  <a href="#palettes">Palettes</a> ·
+  <a href="#use">Use</a>
+</p>
+
+![One Pi session shown in each of the thirteen palettes in turn: phosphor, amber, ice, cyber, cyberpunk, edgerunner, neon, cosmos, poison, magma, fallout, skynet and skynet-dark.](assets/palettes.gif)
+
+<sub>Banner and animation are real Pi sessions running this package, each on its palette's own
+background (`PI_1337_BG=on`); the model's replies are scripted.</sub>
+
+## Install
+
+```bash
+pi install npm:@aeondave/pi-theme-1337
+```
+
+Then pick a palette in `/settings`. To install from Git instead, use
+`pi install git:github.com/AeonDave/pi-theme-1337`; from a local clone, `pi install .` in the
+repository directory.
+
+Requires Pi and Node.js 22.19 or later.
 
 ## What it adds
+
+- **A framed editor.** A centered, rounded box with the model and thinking level in its top border
+  and one status row: workspace, branch, context use, cost and subscription quota.
+- **A status row that tells you what is running.** A long tool call is named in place
+  (`Running npm test… 14s`) without moving the rest of the row.
+- **A compact transcript.** One row per tool call, exploration runs folded into a tally, edit
+  previews with the changed spans emphasised, and errors visible while collapsed.
+- **An end-of-run summary** (`● Done in 2m 14s · edited 3 files +42 −7 · 6 commands, 1 failed`) and
+  a terminal title that shows the run state.
+- **Thirteen palettes**, selectable in `/settings` and kept across restarts.
+- **Reversible.** `/theme-1337` turns the redesign off and gives Pi's own chrome back.
+
+The extension changes presentation only: Pi's editor behavior, tool execution and prompts stay as
+they are, and other extensions' tool renderers keep their content.
+
+<details>
+<summary>Every detail</summary>
 
 - A centered, rounded editor with a prompt marker and activity spinner, the model and thinking level in its top border (`openai/gpt-6.1-sol · xhigh`), and a status row: workspace, branch and session on the left; context usage against its window, estimated cost, the current run's spend and the persona on the right (`[▰▱▱▱▱] 136.9k/1M · 13% · ~$48.89 +$1.24 · 💻 Dev`).
 - A status row that names a long-running tool (`Running npm test…`) in the workspace segment's place, without reflowing the rest of the row. When no tool is named, a run that has lasted three seconds shows its clock there instead: `Working… 45s`.
@@ -18,6 +63,8 @@ The pi-theme-1337 package combines diverse CRT, cyberpunk, synthwave, and HUD-in
 - Compact tool transcript rows and theme-aware edit previews, with errors visible while collapsed. Quiet rows end with what they found (`· 6 matches`, `· no matches`, `· 40 lines`) and running or failed commands show their newest lines. A running command also names the timeout it was given (`● $ npm test (timeout 30s)`). Runs of settled reads and searches fold into one tally row — `● Read width.ts, frame.ts · searched 2 patterns`, or `● Read 12 files` when the names do not fit — until you click it or press the expand key.
 - Rows from other extensions' tool renderers in the same flat frame: one status dot before the call, the result under `└`, no background box. Their lines are the renderer's own, unchanged; `/theme-1337` off returns them to Pi's box.
 - A reversible `/theme-1337` toggle and a clean-buffer copy shortcut (`alt+c` by default). Toggling off gives the editor back to an extension that had installed its own before, and leaves alone one installed since. If another extension installs its editor over the frame while the redesign is on, Pi's own footer and working row come back until the next `/theme-1337` or session start, so the workspace, model, context, cost and spinner never go missing.
+
+</details>
 
 The extension changes presentation only. It leaves Pi's editor behavior, tool execution and prompts in place, and third-party custom tool renderers keep their content: only the frame around their lines changes.
 When pi-persona is installed, the frame shows its persona and includes its child agents' spend in the cost, and the summary row and terminal title say when its background work is still running; the two packages work independently, and the frame is complete without it.
@@ -53,18 +100,6 @@ turn them off.
 | `1337-skynet-dark` | Red-on-near-black Skynet palette. |
 
 All palettes share Pi's 51-token theme contract. See [palette design](docs/palette-design.md) for color references and contrast rules.
-
-## Install
-
-Install from the Pi package source:
-
-```bash
-pi install git:github.com/AeonDave/pi-theme-1337
-```
-
-From a local clone, use `pi install .` in the repository directory.
-
-Requires Pi and Node.js 22.19 or later.
 
 ## Use
 
@@ -118,7 +153,7 @@ npm run preview
 
 `npm run preview` renders a sample session (tool rows, a folded run, a failure, a diff and the framed editor) in a bundled palette, using the package's real renderers in truecolor. Name palettes as arguments or pass `--all`; `--width N` sets the width and `--plain` strips color for diffing. It never changes your terminal. Bold spans need a real terminal: when piping, run it as `FORCE_COLOR=3 npm run preview`.
 
-Development packages are pinned to Pi 1.5.2; wildcard peer dependencies do not promise compatibility with older hosts. Set `PI_TUI` to your installed `pi-tui/dist/index.js` for the parity sweep. Without it, the command uses a `../pi` checkout and skips if that checkout is absent.
+Development packages are pinned to Pi 1.5.2; wildcard peer dependencies do not promise compatibility with older hosts. The parity sweep measures against the installed development `pi-tui`; set `PI_TUI` to another `pi-tui/dist/index.js` to check the bundle you run.
 
 ## License
 

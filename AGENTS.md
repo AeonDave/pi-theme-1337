@@ -827,9 +827,9 @@ box **and** the fixed prompt gutter shift it correctly — no cursor math needed
 
 ```bash
 npm run typecheck && npm test
-npm run test:parity   # a pi checkout at ../pi; skips without one
+npm run test:parity   # against the installed development pi-tui (CI runs this too)
 PI_TUI="$(npm root -g)/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.js" \
-  npm run test:parity # …but prefer the bundle you actually run against
+  npm run test:parity # …or against the bundle you actually run
 npm run preview -- --all   # eyeball tool rows, a folded run and the status row in every palette
 pi -e .   # manual: narrow/wide widths (frame centers, never overflows),
           # type while streaming (cursor + spinner), /theme-1337 restores default chrome

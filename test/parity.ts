@@ -19,10 +19,11 @@
  * (0.83.0 ships no `stripTerminalSequences`; importing it yielded `undefined`
  * and took the TUI down on the first render).
  *
- *   npm run test:parity                        # a pi checkout at ../pi
- *   PI_TUI=/path/to/pi-tui/dist/index.js …     # or the installed bundle — prefer this
+ *   npm run test:parity                        # the installed pi-tui this package develops against
+ *   PI_TUI=/path/to/pi-tui/dist/index.js …     # another installed bundle
  *
- * Skips (exit 0) when neither is found — it is not part of `npm test`.
+ * Without the installed development copy it falls back to a pi checkout at ../pi, and skips
+ * (exit 0) when neither is found. It is not part of `npm test`; CI runs it as its own step.
  */
 
 import { existsSync } from "node:fs";
@@ -31,7 +32,10 @@ import { editorWidthFor, frameEditor, ROUNDED } from "../src/frame.ts";
 import { chooseBox, stripAnsi, useTerminalMetrics } from "../src/width.ts";
 
 const local = (p: string) => new URL(p, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
-const entry = process.env.PI_TUI ?? `${local("../../pi/")}packages/tui/src/index.ts`;
+// The installed bundle is what users run; a source checkout is the fallback, and one whose
+// dependencies are not installed cannot even be imported.
+const installed = `${local("../node_modules/@earendil-works/pi-tui/")}dist/index.js`;
+const entry = process.env.PI_TUI ?? (existsSync(installed) ? installed : `${local("../../pi/")}packages/tui/src/index.ts`);
 
 if (!existsSync(entry)) {
 	console.log(`skip: no pi-tui at ${entry} (set PI_TUI to the bundle you run against)`);

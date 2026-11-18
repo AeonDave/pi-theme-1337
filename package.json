@@ -1,6 +1,6 @@
 {
-  "name": "pi-theme-1337",
-  "version": "0.5.0",
+  "name": "@aeondave/pi-theme-1337",
+  "version": "0.5.1",
   "private": false,
   "type": "module",
   "description": "Thirteen vivid themes for Pi with a framed editor, compact tool views, theme-aware diffs, and configurable text spinners.",
@@ -31,6 +31,7 @@
     "themes",
     "docs",
     "assets/banner.png",
+    "assets/palettes.gif",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -54,7 +55,11 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "pi": {
+    "image": "https://raw.githubusercontent.com/AeonDave/pi-theme-1337/v0.5.1/assets/banner.png",
     "extensions": [
       "./src/index.ts"
     ],
