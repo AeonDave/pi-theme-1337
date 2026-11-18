@@ -12,3 +12,7 @@ updates:
       pi-host:
         patterns:
           - "@earendil-works/pi-*"
+    ignore:
+      # Node types track the oldest supported Node major (engines.node >=22.19.0).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
